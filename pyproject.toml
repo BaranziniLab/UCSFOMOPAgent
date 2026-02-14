@@ -1,0 +1,38 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ucsfomopagent"
+version = "0.1.0"
+description = "An MCP server for querying the UCSF OMOP electronic health records database for rapid clinical data retrieval"
+readme = "README.md"
+license = {text = "MIT"}
+authors = [
+    {name = "Wanjun Gu", email = "wanjun.gu@ucsf.edu"},
+    {name = "Gianmarco Bellucci", email = "gianmarco.bellucci@ucsf.edu"}
+]
+maintainers = [
+    {name = "Wanjun Gu", email = "wanjun.gu@ucsf.edu"},
+    {name = "Gianmarco Bellucci", email = "gianmarco.bellucci@ucsf.edu"}
+]
+keywords = [
+    "mcp",
+    "medical",
+    "clinical",
+    "electronic-health-records",
+    "ehr",
+    "omop",
+    "sql-server",
+    "healthcare",
+    "clinical-informatics"
+]
+dependencies = [
+    "fastmcp>=2.11.2",
+    "pydantic>=2.11.7",
+    "pymssql>=2.3.7",
+]
+requires-python = ">=3.11"
+
+[project.scripts]
+ucsfomopagent = "ucsfomopagent.cli:main"
