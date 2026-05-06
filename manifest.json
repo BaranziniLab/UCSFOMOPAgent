@@ -1,0 +1,33 @@
+{
+  "name": "ucsfomopagent",
+  "display_name": "UCSFOMOPAgent",
+  "description": "Read-only MCP access to the UCSF OMOP de-identified EHR database.",
+  "version": "0.1.0",
+  "entry_point": "ucsfomopagent",
+  "repository": "https://github.com/BaranziniLab/UCSFOMOPAgent",
+  "tools_count": 2,
+  "env_vars": [
+    {
+      "key": "CLINICAL_RECORDS_USERNAME",
+      "required": true,
+      "auto_propagate": false,
+      "description": "UCSF network username",
+      "secret": true
+    },
+    {
+      "key": "CLINICAL_RECORDS_PASSWORD",
+      "required": true,
+      "auto_propagate": false,
+      "description": "UCSF network password",
+      "secret": true
+    },
+    {
+      "key": "OMOP_LOG_LEVEL",
+      "required": false,
+      "auto_propagate": true,
+      "default": "INFO",
+      "description": "Logging level",
+      "secret": false
+    }
+  ]
+}

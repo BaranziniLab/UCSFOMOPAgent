@@ -2,6 +2,18 @@
 
 An MCP (Model Context Protocol) server for querying the UCSF OMOP electronic health records database for rapid clinical data retrieval.
 
+## BioRouter Extension
+
+**[Download ucsfomopagent.brxt](https://github.com/BaranziniLab/UCSFOMOPAgent/releases/latest/download/ucsfomopagent.brxt)**
+
+Drag the `.brxt` file into BioRouter's **Extensions → Add extension** dialog. BioRouter will install the virtual environment automatically and prompt for required credentials.
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `CLINICAL_RECORDS_USERNAME` | ✅ | — | UCSF network username |
+| `CLINICAL_RECORDS_PASSWORD` | ✅ | — | UCSF network password |
+| `OMOP_LOG_LEVEL` | optional | `INFO` | Logging level |
+
 ## Features
 
 - **Query UCSF OMOP Database**: Execute SQL queries on the UCSF OMOP de-identified clinical database
