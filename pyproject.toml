@@ -36,3 +36,11 @@ requires-python = ">=3.11"
 
 [project.scripts]
 ucsfomopagent = "ucsfomopagent.cli:main"
+
+[tool.uv]
+# cryptography >=49 dropped x86_64 macOS wheels (2026-06-12), forcing a
+# from-source Rust build on Intel Macs. Cap it to <49 there so Intel users get
+# a prebuilt wheel; arm64/Linux/Windows are unaffected.
+constraint-dependencies = [
+    "cryptography<49; sys_platform == 'darwin' and platform_machine == 'x86_64'",
+]
