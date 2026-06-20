@@ -1,24 +1,71 @@
 # UCSFOMOPAgent
 
-An MCP (Model Context Protocol) server for querying the UCSF OMOP electronic health records database for rapid clinical data retrieval.
+An MCP (Model Context Protocol) server for querying the **UCSF OMOP** de-identified
+electronic health records database (OMOP CDM v5.4 on Microsoft SQL Server) for
+fast, robust clinical data retrieval.
+
+> **v0.2.0** is a major upgrade focused on getting the LLM to the *right* data
+> *faster* and *more reliably*, while staying robust to database changes. See
+> [`benchmark/CHANGELOG.md`](benchmark/CHANGELOG.md) for the full engineering log
+> and [`benchmark/`](benchmark/) for the reproducible evaluation harness.
 
 ## BioRouter Extension
 
 **[Download ucsfomopagent.brxt](https://github.com/BaranziniLab/UCSFOMOPAgent/releases/latest/download/ucsfomopagent.brxt)**
 
-Drag the `.brxt` file into BioRouter's **Extensions → Add extension** dialog. BioRouter will install the virtual environment automatically and prompt for required credentials.
+Drag the `.brxt` file into BioRouter's **Extensions → Add extension** dialog.
+BioRouter installs the virtual environment automatically and prompts for
+credentials.
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `CLINICAL_RECORDS_USERNAME` | ✅ | — | UCSF network username |
 | `CLINICAL_RECORDS_PASSWORD` | ✅ | — | UCSF network password |
 | `OMOP_LOG_LEVEL` | optional | `INFO` | Logging level |
+| `OMOP_SCHEMA` | optional | `omop` | Default DB schema for OMOP tables |
+| `CLINICAL_RECORDS_SERVER` | optional | (UCSF default) | Override DB host (migration) |
+| `CLINICAL_RECORDS_DATABASE` | optional | `OMOP_DEID` | Override DB name (migration) |
+
+## What's new in v0.2.0
+
+The original agent exposed a raw SQL pipe and a table-lister with **no** context,
+so the LLM rediscovered the SQL dialect, schema, OMOP conventions, and vocabulary
+by trial and error every session — burning tokens and iterations, and sometimes
+landing on wrong concepts. v0.2.0 fixes this entirely inside the extension:
+
+### Injected context (surfaced into the agent's system prompt)
+The server now ships a rich `instructions` block covering: the Microsoft SQL
+Server dialect (`TOP` not `LIMIT`, window/median syntax), the `omop` default
+schema, OMOP CDM essentials (the `*_concept_id` → `concept` join, `concept_ancestor`
+for disease/drug-class cohorts, `drug_era` for ingredient exposure,
+`COUNT(DISTINCT person_id)` for cohorts), demographic concept_ids with the high
+"Unknown" rates flagged, the (very large) `measurement` rule (always filter by
+concept_id), de-identification date-shift caveats, and the list of empty
+tables/columns to never query.
+
+### Tools (2 → 5)
+| Tool | Purpose |
+|------|---------|
+| `query_ucsf_omop` | Read-only T-SQL query. Now reuses a pooled connection, caps result rows, tolerates leading comments, and returns **self-healing** error hints (e.g. `LIMIT`→`TOP`, unknown table/column → "check `get_omop_schema`"). |
+| `search_concepts` | Resolve a clinical term to ranked OMOP `concept_id`s. **Tokenized** matching ("malignant breast cancer" → "Malignant neoplasm of breast"), `concept_code` lookup, and `descendant_count` for hierarchy expansion. |
+| `find_measurement` | Lab/vital finder. Returns `recommended_concept_ids` (the value-bearing LOINC concepts that cover the lab, ready for `IN(...)`), the dominant unit, patient counts, and value ranges — in one call. Solves the "standard concept has no value" trap. |
+| `get_omop_schema` | Live schema introspection: tables + row counts (no args) or a table's columns. Read live → robust to UCSF schema drift. |
+| `list_ucsf_omop_tables` | Back-compat alias of `get_omop_schema`. |
+
+### Speed & robustness
+- One pooled DB connection reused across calls (health-checked, auto-reconnect),
+  instead of connect-per-query.
+- Schema/column introspection cached in-process; large result sets capped.
+- Server/database/schema overridable by env (migration-safe); live introspection
+  rather than hardcoded structure.
 
 ## Features
 
-- **Query UCSF OMOP Database**: Execute SQL queries on the UCSF OMOP de-identified clinical database
-- **List Available Tables**: Discover all available clinical data tables
-- **Pre-configured Server**: Server and database endpoints are pre-configured - only provide your credentials!
+- **Query UCSF OMOP**: read-only T-SQL on the de-identified OMOP CDM.
+- **Concept & lab resolution**: built-in vocabulary search and a lab finder so
+  the model stops guessing concept_ids.
+- **Schema introspection**: live, drift-resistant.
+- **Pre-configured**: server/database baked in — just provide credentials.
 
 ## Installation
 
@@ -28,109 +75,28 @@ Drag the `.brxt` file into BioRouter's **Extensions → Add extension** dialog. 
 uvx --from git+https://github.com/BaranziniLab/UCSFOMOPAgent ucsfomopagent
 ```
 
-### Local Installation
+### Build the `.brxt`
 
 ```bash
-cd UCSFOMOPAgent
-pip install -e .
+zip -r ../ucsfomopagent.brxt manifest.json README.md pyproject.toml src/ skills/ \
+  -x '*/__pycache__/*' '*.pyc'
 ```
 
-## Usage
+(Exclude `.venv/`, `__pycache__/`, and the `benchmark/` directory — the bundle
+needs only `manifest.json`, `README.md`, `pyproject.toml`, `src/`, and `skills/`.)
 
-### As an MCP Server
+## Evaluation
 
-Add to your MCP client configuration (e.g., Claude Desktop):
-
-```json
-{
-  "mcpServers": {
-    "ucsfomopagent": {
-      "command": "uvx",
-      "args": ["--from", "git+https://github.com/BaranziniLab/UCSFOMOPAgent", "ucsfomopagent"],
-      "env": {
-        "CLINICAL_RECORDS_USERNAME": "CAMPUS\\YourUsername",
-        "CLINICAL_RECORDS_PASSWORD": "YourPassword"
-      }
-    }
-  }
-}
-```
-
-### Direct Command Line
-
-Set environment variables and run:
-
-```bash
-export CLINICAL_RECORDS_USERNAME="CAMPUS\\YourUsername"
-export CLINICAL_RECORDS_PASSWORD="YourPassword"
-ucsfomopagent
-```
-
-## Configuration
-
-Pre-configured server settings:
-- **Server**: QCDIDDWDB001.ucsfmedicalcenter.org
-- **Database**: OMOP_DEID
-
-Required environment variables (you must provide):
-- `CLINICAL_RECORDS_USERNAME`: Your UCSF database username (e.g., "CAMPUS\\username")
-- `CLINICAL_RECORDS_PASSWORD`: Your UCSF database password
-
-Optional environment variable:
-- `OMOP_LOG_LEVEL`: Set logging level (DEBUG, INFO, WARNING, ERROR) - defaults to INFO
-
-## Available Tools
-
-### 1. `query_ucsf_omop`
-
-Execute a READ-ONLY SQL query on the UCSF OMOP electronic health records database.
-
-**Parameters:**
-- `sql_query` (string, required): SQL SELECT query for rapid clinical record retrieval
-
-**Example:**
-```sql
-SELECT TOP 10 person_id, gender_concept_id, year_of_birth
-FROM dbo.person
-WHERE year_of_birth > 1980
-```
-
-### 2. `list_ucsf_omop_tables`
-
-List all available clinical data tables in the UCSF OMOP electronic health records database.
-
-**Returns:** JSON list of tables with schema, name, type, and full name.
+`benchmark/` contains the reproducible evaluation used to drive these
+improvements: a harness that drives the **real** MCP server (over stdio) with a
+fixed neutral system prompt, a 100-question bench across four difficulty tiers,
+and an LLM-judge grader. Absolute patient counts are redacted (this repo is
+public); the methodology, relative improvements, and efficiency metrics
+(iterations / tool calls / tokens / latency) are included. See
+[`benchmark/README.md`](benchmark/README.md).
 
 ## Security
 
-This server enforces read-only access to the UCSF OMOP database. Write operations (INSERT, UPDATE, DELETE, etc.) are not permitted.
-
-**Important:**
-- Only SELECT queries are allowed
-- The database contains de-identified patient data
-- Follow all UCSF data use policies and HIPAA regulations
-
-## OMOP Common Data Model
-
-The UCSF OMOP database follows the OMOP Common Data Model (CDM) standard, which includes standardized tables such as:
-
-- `person`: Patient demographics
-- `condition_occurrence`: Diagnosis and conditions
-- `drug_exposure`: Medication records
-- `procedure_occurrence`: Medical procedures
-- `measurement`: Lab results and vital signs
-- `observation`: Clinical observations
-- `visit_occurrence`: Healthcare visits
-
-## License
-
-MIT
-
-## Authors
-
-- Wanjun Gu (wanjun.gu@ucsf.edu)
-- Gianmarco Bellucci (gianmarco.bellucci@ucsf.edu)
-
-## About OMOP
-
-The Observational Medical Outcomes Partnership (OMOP) Common Data Model (CDM) is designed to standardize the structure and content of observational data to enable efficient analyses across disparate datasets.
+All queries are validated read-only (SELECT/WITH only; no DML/DDL; no stacked
+statements). Credentials are provided via environment variables (stored in the OS
+keyring by BioRouter) and are never logged or committed.

@@ -1,0 +1,792 @@
+[
+  {
+    "id": 1,
+    "tier": 1,
+    "question": "How many patients are in the database?",
+    "ground_truth_sql": "SELECT COUNT(*) AS n FROM person",
+    "rubric": null
+  },
+  {
+    "id": 2,
+    "tier": 1,
+    "question": "How many patients are female?",
+    "ground_truth_sql": "SELECT COUNT(*) AS n FROM person WHERE gender_concept_id=8532",
+    "rubric": null
+  },
+  {
+    "id": 3,
+    "tier": 1,
+    "question": "How many patients are male?",
+    "ground_truth_sql": "SELECT COUNT(*) AS n FROM person WHERE gender_concept_id=8507",
+    "rubric": null
+  },
+  {
+    "id": 4,
+    "tier": 1,
+    "question": "What is the distribution of patients by gender?",
+    "ground_truth_sql": "SELECT c.concept_name, COUNT(*) AS n FROM person p JOIN concept c ON p.gender_concept_id=c.concept_id GROUP BY c.concept_name ORDER BY n DESC",
+    "rubric": null
+  },
+  {
+    "id": 5,
+    "tier": 1,
+    "question": "What is the distribution of patients by race?",
+    "ground_truth_sql": "SELECT c.concept_name, COUNT(*) AS n FROM person p JOIN concept c ON p.race_concept_id=c.concept_id GROUP BY c.concept_name ORDER BY n DESC",
+    "rubric": null
+  },
+  {
+    "id": 6,
+    "tier": 1,
+    "question": "What is the distribution of patients by ethnicity?",
+    "ground_truth_sql": "SELECT c.concept_name, COUNT(*) AS n FROM person p JOIN concept c ON p.ethnicity_concept_id=c.concept_id GROUP BY c.concept_name ORDER BY n DESC",
+    "rubric": null
+  },
+  {
+    "id": 7,
+    "tier": 1,
+    "question": "How many patients identify as White race?",
+    "ground_truth_sql": "SELECT COUNT(*) AS n FROM person WHERE race_concept_id=8527",
+    "rubric": null
+  },
+  {
+    "id": 8,
+    "tier": 1,
+    "question": "How many patients identify as Black or African American?",
+    "ground_truth_sql": "SELECT COUNT(*) AS n FROM person WHERE race_concept_id=8516",
+    "rubric": null
+  },
+  {
+    "id": 9,
+    "tier": 1,
+    "question": "How many patients identify as Asian race?",
+    "ground_truth_sql": "SELECT COUNT(*) AS n FROM person WHERE race_concept_id=8515",
+    "rubric": null
+  },
+  {
+    "id": 10,
+    "tier": 1,
+    "question": "How many patients are Hispanic or Latino?",
+    "ground_truth_sql": "SELECT COUNT(*) AS n FROM person WHERE ethnicity_concept_id=38003563",
+    "rubric": null
+  },
+  {
+    "id": 11,
+    "tier": 1,
+    "question": "How many patient deaths are recorded?",
+    "ground_truth_sql": "SELECT COUNT(*) AS n FROM death",
+    "rubric": null
+  },
+  {
+    "id": 12,
+    "tier": 1,
+    "question": "How many patients were born before 1950?",
+    "ground_truth_sql": "SELECT COUNT(*) AS n FROM person WHERE year_of_birth<1950",
+    "rubric": null
+  },
+  {
+    "id": 13,
+    "tier": 1,
+    "question": "How many patients have a diagnosis of type 2 diabetes mellitus?",
+    "ground_truth_sql": "SELECT COUNT(DISTINCT co.person_id) AS n FROM condition_occurrence co JOIN concept_ancestor ca ON co.condition_concept_id=ca.descendant_concept_id WHERE ca.ancestor_concept_id=201826",
+    "rubric": null
+  },
+  {
+    "id": 14,
+    "tier": 1,
+    "question": "How many patients have a diagnosis of essential hypertension?",
+    "ground_truth_sql": "SELECT COUNT(DISTINCT co.person_id) AS n FROM condition_occurrence co JOIN concept_ancestor ca ON co.condition_concept_id=ca.descendant_concept_id WHERE ca.ancestor_concept_id=320128",
+    "rubric": null
+  },
+  {
+    "id": 15,
+    "tier": 1,
+    "question": "How many patients have chronic kidney disease?",
+    "ground_truth_sql": "SELECT COUNT(DISTINCT co.person_id) AS n FROM condition_occurrence co JOIN concept_ancestor ca ON co.condition_concept_id=ca.descendant_concept_id WHERE ca.ancestor_concept_id=46271022",
+    "rubric": null
+  },
+  {
+    "id": 16,
+    "tier": 1,
+    "question": "How many patients have heart failure?",
+    "ground_truth_sql": "SELECT COUNT(DISTINCT co.person_id) AS n FROM condition_occurrence co JOIN concept_ancestor ca ON co.condition_concept_id=ca.descendant_concept_id WHERE ca.ancestor_concept_id=316139",
+    "rubric": null
+  },
+  {
+    "id": 17,
+    "tier": 1,
+    "question": "How many patients have chronic obstructive pulmonary disease (COPD)?",
+    "ground_truth_sql": "SELECT COUNT(DISTINCT co.person_id) AS n FROM condition_occurrence co JOIN concept_ancestor ca ON co.condition_concept_id=ca.descendant_concept_id WHERE ca.ancestor_concept_id=255573",
+    "rubric": null
+  },
+  {
+    "id": 18,
+    "tier": 1,
+    "question": "How many patients have asthma?",
+    "ground_truth_sql": "SELECT COUNT(DISTINCT co.person_id) AS n FROM condition_occurrence co JOIN concept_ancestor ca ON co.condition_concept_id=ca.descendant_concept_id WHERE ca.ancestor_concept_id=317009",
+    "rubric": null
+  },
+  {
+    "id": 19,
+    "tier": 1,
+    "question": "How many patients have had a myocardial infarction?",
+    "ground_truth_sql": "SELECT COUNT(DISTINCT co.person_id) AS n FROM condition_occurrence co JOIN concept_ancestor ca ON co.condition_concept_id=ca.descendant_concept_id WHERE ca.ancestor_concept_id=4329847",
+    "rubric": null
+  },
+  {
+    "id": 20,
+    "tier": 1,
+    "question": "How many patients have atrial fibrillation?",
+    "ground_truth_sql": "SELECT COUNT(DISTINCT co.person_id) AS n FROM condition_occurrence co JOIN concept_ancestor ca ON co.condition_concept_id=ca.descendant_concept_id WHERE ca.ancestor_concept_id=313217",
+    "rubric": null
+  },
+  {
+    "id": 21,
+    "tier": 1,
+    "question": "How many patients have had a cerebral infarction (ischemic stroke)?",
+    "ground_truth_sql": "SELECT COUNT(DISTINCT co.person_id) AS n FROM condition_occurrence co JOIN concept_ancestor ca ON co.condition_concept_id=ca.descendant_concept_id WHERE ca.ancestor_concept_id=443454",
+    "rubric": null
+  },
+  {
+    "id": 22,
+    "tier": 1,
+    "question": "How many patients have major depressive disorder?",
+    "ground_truth_sql": "SELECT COUNT(DISTINCT co.person_id) AS n FROM condition_occurrence co JOIN concept_ancestor ca ON co.condition_concept_id=ca.descendant_concept_id WHERE ca.ancestor_concept_id=4152280",
+    "rubric": null
+  },
+  {
+    "id": 23,
+    "tier": 1,
+    "question": "How many patients have a diagnosis of obesity?",
+    "ground_truth_sql": "SELECT COUNT(DISTINCT co.person_id) AS n FROM condition_occurrence co JOIN concept_ancestor ca ON co.condition_concept_id=ca.descendant_concept_id WHERE ca.ancestor_concept_id=433736",
+    "rubric": null
+  },
+  {
+    "id": 24,
+    "tier": 1,
+    "question": "How many patients have hyperlipidemia?",
+    "ground_truth_sql": "SELECT COUNT(DISTINCT co.person_id) AS n FROM condition_occurrence co JOIN concept_ancestor ca ON co.condition_concept_id=ca.descendant_concept_id WHERE ca.ancestor_concept_id=432867",
+    "rubric": null
+  },
+  {
+    "id": 25,
+    "tier": 1,
+    "question": "How many female patients have malignant breast cancer?",
+    "ground_truth_sql": "SELECT COUNT(DISTINCT co.person_id) AS n FROM condition_occurrence co JOIN concept_ancestor ca ON co.condition_concept_id=ca.descendant_concept_id JOIN person p ON co.person_id=p.person_id WHERE ca.ancestor_concept_id=4112853 AND p.gender_concept_id=8532",
+    "rubric": null
+  },
+  {
+    "id": 26,
+    "tier": 1,
+    "question": "How many patients have been exposed to atorvastatin?",
+    "ground_truth_sql": "SELECT COUNT(DISTINCT person_id) AS n FROM drug_era WHERE drug_concept_id=1545958",
+    "rubric": null
+  },
+  {
+    "id": 27,
+    "tier": 1,
+    "question": "How many patients have been exposed to metformin?",
+    "ground_truth_sql": "SELECT COUNT(DISTINCT person_id) AS n FROM drug_era WHERE drug_concept_id=1503297",
+    "rubric": null
+  },
+  {
+    "id": 28,
+    "tier": 1,
+    "question": "How many patients have been exposed to warfarin?",
+    "ground_truth_sql": "SELECT COUNT(DISTINCT person_id) AS n FROM drug_era WHERE drug_concept_id=1310149",
+    "rubric": null
+  },
+  {
+    "id": 29,
+    "tier": 1,
+    "question": "How many patients have been exposed to any insulin?",
+    "ground_truth_sql": "SELECT COUNT(DISTINCT de.person_id) AS n FROM drug_era de JOIN concept_ancestor ca ON de.drug_concept_id=ca.descendant_concept_id WHERE ca.ancestor_concept_id=21600713",
+    "rubric": null
+  },
+  {
+    "id": 30,
+    "tier": 1,
+    "question": "How many patients have been exposed to any HMG-CoA reductase inhibitor (statin)?",
+    "ground_truth_sql": "SELECT COUNT(DISTINCT de.person_id) AS n FROM drug_era de JOIN concept_ancestor ca ON de.drug_concept_id=ca.descendant_concept_id WHERE ca.ancestor_concept_id=21601855",
+    "rubric": null
+  },
+  {
+    "id": 31,
+    "tier": 2,
+    "question": "How many patients have both type 2 diabetes and essential hypertension?",
+    "ground_truth_sql": "SELECT COUNT(*) AS n FROM ((SELECT co.person_id FROM condition_occurrence co JOIN concept_ancestor ca ON co.condition_concept_id=ca.descendant_concept_id WHERE ca.ancestor_concept_id=201826) INTERSECT (SELECT co.person_id FROM condition_occurrence co JOIN concept_ancestor ca ON co.condition_concept_id=ca.descendant_concept_id WHERE ca.ancestor_concept_id=320128)) z",
+    "rubric": null
+  },
+  {
+    "id": 32,
+    "tier": 2,
+    "question": "Among patients with essential hypertension, how many are over 65 years old?",
+    "ground_truth_sql": "SELECT COUNT(DISTINCT co.person_id) AS n FROM condition_occurrence co JOIN concept_ancestor ca ON co.condition_concept_id=ca.descendant_concept_id JOIN person p ON co.person_id=p.person_id WHERE ca.ancestor_concept_id=320128 AND (2025-p.year_of_birth)>65",
+    "rubric": null
+  },
+  {
+    "id": 33,
+    "tier": 2,
+    "question": "How many female patients have an HbA1c lab value greater than 9%?",
+    "ground_truth_sql": "SELECT COUNT(DISTINCT m.person_id) AS n FROM measurement m JOIN person p ON m.person_id=p.person_id WHERE m.measurement_concept_id IN (3005673,3004410,36032094,3007263) AND m.value_as_number>9 AND m.value_as_number<30 AND p.gender_concept_id=8532",
+    "rubric": null
+  },
+  {
+    "id": 34,
+    "tier": 2,
+    "question": "How many patients with type 2 diabetes have been exposed to metformin?",
+    "ground_truth_sql": "SELECT COUNT(DISTINCT de.person_id) AS n FROM drug_era de WHERE de.drug_concept_id=1503297 AND de.person_id IN (SELECT co.person_id FROM condition_occurrence co JOIN concept_ancestor ca ON co.condition_concept_id=ca.descendant_concept_id WHERE ca.ancestor_concept_id=201826)",
+    "rubric": null
+  },
+  {
+    "id": 35,
+    "tier": 2,
+    "question": "How many patients with type 2 diabetes have been exposed to insulin?",
+    "ground_truth_sql": "SELECT COUNT(DISTINCT de.person_id) AS n FROM drug_era de JOIN concept_ancestor ca ON de.drug_concept_id=ca.descendant_concept_id WHERE ca.ancestor_concept_id=21600713 AND de.person_id IN (SELECT co.person_id FROM condition_occurrence co JOIN concept_ancestor ca ON co.condition_concept_id=ca.descendant_concept_id WHERE ca.ancestor_concept_id=201826)",
+    "rubric": null
+  },
+  {
+    "id": 36,
+    "tier": 2,
+    "question": "How many patients on metformin were later diagnosed with chronic kidney disease within 2 years of their first metformin exposure?",
+    "ground_truth_sql": "WITH mf AS (SELECT person_id, MIN(drug_era_start_date) fd FROM drug_era WHERE drug_concept_id=1503297 GROUP BY person_id), ckd AS (SELECT co.person_id, MIN(co.condition_start_date) cd FROM condition_occurrence co JOIN concept_ancestor ca ON co.condition_concept_id=ca.descendant_concept_id WHERE ca.ancestor_concept_id=46271022 GROUP BY co.person_id) SELECT COUNT(*) AS n FROM mf JOIN ckd ON mf.person_id=ckd.person_id WHERE ckd.cd>mf.fd AND ckd.cd<=DATEADD(year,2,mf.fd)",
+    "rubric": null
+  },
+  {
+    "id": 37,
+    "tier": 2,
+    "question": "How many patients with heart failure have been exposed to furosemide?",
+    "ground_truth_sql": "SELECT COUNT(DISTINCT de.person_id) AS n FROM drug_era de WHERE de.drug_concept_id=956874 AND de.person_id IN (SELECT co.person_id FROM condition_occurrence co JOIN concept_ancestor ca ON co.condition_concept_id=ca.descendant_concept_id WHERE ca.ancestor_concept_id=316139)",
+    "rubric": null
+  },
+  {
+    "id": 38,
+    "tier": 2,
+    "question": "How many patients with atrial fibrillation have been exposed to warfarin?",
+    "ground_truth_sql": "SELECT COUNT(DISTINCT de.person_id) AS n FROM drug_era de WHERE de.drug_concept_id=1310149 AND de.person_id IN (SELECT co.person_id FROM condition_occurrence co JOIN concept_ancestor ca ON co.condition_concept_id=ca.descendant_concept_id WHERE ca.ancestor_concept_id=313217)",
+    "rubric": null
+  },
+  {
+    "id": 39,
+    "tier": 2,
+    "question": "How many patients have both COPD and asthma diagnoses?",
+    "ground_truth_sql": "SELECT COUNT(*) AS n FROM ((SELECT co.person_id FROM condition_occurrence co JOIN concept_ancestor ca ON co.condition_concept_id=ca.descendant_concept_id WHERE ca.ancestor_concept_id=255573) INTERSECT (SELECT co.person_id FROM condition_occurrence co JOIN concept_ancestor ca ON co.condition_concept_id=ca.descendant_concept_id WHERE ca.ancestor_concept_id=317009)) z",
+    "rubric": null
+  },
+  {
+    "id": 40,
+    "tier": 2,
+    "question": "How many patients with type 2 diabetes have an HbA1c lab value of 7% or higher?",
+    "ground_truth_sql": "SELECT COUNT(DISTINCT m.person_id) AS n FROM measurement m WHERE m.measurement_concept_id IN (3005673,3004410,36032094,3007263) AND m.value_as_number>=7 AND m.value_as_number<30 AND m.person_id IN (SELECT co.person_id FROM condition_occurrence co JOIN concept_ancestor ca ON co.condition_concept_id=ca.descendant_concept_id WHERE ca.ancestor_concept_id=201826)",
+    "rubric": null
+  },
+  {
+    "id": 41,
+    "tier": 2,
+    "question": "How many patients have a serum creatinine lab value greater than 2.0 mg/dL?",
+    "ground_truth_sql": "SELECT COUNT(DISTINCT person_id) AS n FROM measurement WHERE measurement_concept_id=3016723 AND value_as_number>2 AND value_as_number<50",
+    "rubric": null
+  },
+  {
+    "id": 42,
+    "tier": 2,
+    "question": "Among patients with chronic kidney disease, how many are over 70 years old?",
+    "ground_truth_sql": "SELECT COUNT(DISTINCT co.person_id) AS n FROM condition_occurrence co JOIN concept_ancestor ca ON co.condition_concept_id=ca.descendant_concept_id JOIN person p ON co.person_id=p.person_id WHERE ca.ancestor_concept_id=46271022 AND (2025-p.year_of_birth)>70",
+    "rubric": null
+  },
+  {
+    "id": 43,
+    "tier": 2,
+    "question": "How many patients with a myocardial infarction have been exposed to aspirin?",
+    "ground_truth_sql": "SELECT COUNT(DISTINCT de.person_id) AS n FROM drug_era de WHERE de.drug_concept_id=1112807 AND de.person_id IN (SELECT co.person_id FROM condition_occurrence co JOIN concept_ancestor ca ON co.condition_concept_id=ca.descendant_concept_id WHERE ca.ancestor_concept_id=4329847)",
+    "rubric": null
+  },
+  {
+    "id": 44,
+    "tier": 2,
+    "question": "How many patients with heart failure are deceased (have a death record)?",
+    "ground_truth_sql": "SELECT COUNT(DISTINCT d.person_id) AS n FROM death d WHERE d.person_id IN (SELECT co.person_id FROM condition_occurrence co JOIN concept_ancestor ca ON co.condition_concept_id=ca.descendant_concept_id WHERE ca.ancestor_concept_id=316139)",
+    "rubric": null
+  },
+  {
+    "id": 45,
+    "tier": 2,
+    "question": "How many patients have an LDL cholesterol lab value greater than 190 mg/dL?",
+    "ground_truth_sql": "SELECT COUNT(DISTINCT person_id) AS n FROM measurement WHERE measurement_concept_id=3028437 AND value_as_number>190 AND value_as_number<1000",
+    "rubric": null
+  },
+  {
+    "id": 46,
+    "tier": 2,
+    "question": "Among patients with chronic kidney disease, how many have a serum potassium lab value greater than 5.5 (hyperkalemia)?",
+    "ground_truth_sql": "SELECT COUNT(DISTINCT m.person_id) AS n FROM measurement m WHERE m.measurement_concept_id=3023103 AND m.value_as_number>5.5 AND m.value_as_number<15 AND m.person_id IN (SELECT co.person_id FROM condition_occurrence co JOIN concept_ancestor ca ON co.condition_concept_id=ca.descendant_concept_id WHERE ca.ancestor_concept_id=46271022)",
+    "rubric": null
+  },
+  {
+    "id": 47,
+    "tier": 2,
+    "question": "How many patients with COPD have been exposed to albuterol?",
+    "ground_truth_sql": "SELECT COUNT(DISTINCT de.person_id) AS n FROM drug_era de WHERE de.drug_concept_id=1154343 AND de.person_id IN (SELECT co.person_id FROM condition_occurrence co JOIN concept_ancestor ca ON co.condition_concept_id=ca.descendant_concept_id WHERE ca.ancestor_concept_id=255573)",
+    "rubric": null
+  },
+  {
+    "id": 48,
+    "tier": 2,
+    "question": "How many patients diagnosed with asthma are under 18 years old?",
+    "ground_truth_sql": "SELECT COUNT(DISTINCT co.person_id) AS n FROM condition_occurrence co JOIN concept_ancestor ca ON co.condition_concept_id=ca.descendant_concept_id JOIN person p ON co.person_id=p.person_id WHERE ca.ancestor_concept_id=317009 AND (2025-p.year_of_birth)<18",
+    "rubric": null
+  },
+  {
+    "id": 49,
+    "tier": 2,
+    "question": "How many patients with major depressive disorder have been exposed to gabapentin?",
+    "ground_truth_sql": "SELECT COUNT(DISTINCT de.person_id) AS n FROM drug_era de WHERE de.drug_concept_id=797399 AND de.person_id IN (SELECT co.person_id FROM condition_occurrence co JOIN concept_ancestor ca ON co.condition_concept_id=ca.descendant_concept_id WHERE ca.ancestor_concept_id=4152280)",
+    "rubric": null
+  },
+  {
+    "id": 50,
+    "tier": 2,
+    "question": "How many patients have been exposed to both atorvastatin and metformin?",
+    "ground_truth_sql": "SELECT COUNT(*) AS n FROM ((SELECT person_id FROM drug_era WHERE drug_concept_id=1545958) INTERSECT (SELECT person_id FROM drug_era WHERE drug_concept_id=1503297)) z",
+    "rubric": null
+  },
+  {
+    "id": 51,
+    "tier": 2,
+    "question": "How many male patients have had a myocardial infarction?",
+    "ground_truth_sql": "SELECT COUNT(DISTINCT co.person_id) AS n FROM condition_occurrence co JOIN concept_ancestor ca ON co.condition_concept_id=ca.descendant_concept_id JOIN person p ON co.person_id=p.person_id WHERE ca.ancestor_concept_id=4329847 AND p.gender_concept_id=8507",
+    "rubric": null
+  },
+  {
+    "id": 52,
+    "tier": 2,
+    "question": "How many patients with cerebral infarction (ischemic stroke) have been exposed to clopidogrel?",
+    "ground_truth_sql": "SELECT COUNT(DISTINCT de.person_id) AS n FROM drug_era de WHERE de.drug_concept_id=1322184 AND de.person_id IN (SELECT co.person_id FROM condition_occurrence co JOIN concept_ancestor ca ON co.condition_concept_id=ca.descendant_concept_id WHERE ca.ancestor_concept_id=443454)",
+    "rubric": null
+  },
+  {
+    "id": 53,
+    "tier": 2,
+    "question": "How many patients with type 2 diabetes are deceased?",
+    "ground_truth_sql": "SELECT COUNT(DISTINCT d.person_id) AS n FROM death d WHERE d.person_id IN (SELECT co.person_id FROM condition_occurrence co JOIN concept_ancestor ca ON co.condition_concept_id=ca.descendant_concept_id WHERE ca.ancestor_concept_id=201826)",
+    "rubric": null
+  },
+  {
+    "id": 54,
+    "tier": 2,
+    "question": "How many patients have both obesity and type 2 diabetes?",
+    "ground_truth_sql": "SELECT COUNT(*) AS n FROM ((SELECT co.person_id FROM condition_occurrence co JOIN concept_ancestor ca ON co.condition_concept_id=ca.descendant_concept_id WHERE ca.ancestor_concept_id=433736) INTERSECT (SELECT co.person_id FROM condition_occurrence co JOIN concept_ancestor ca ON co.condition_concept_id=ca.descendant_concept_id WHERE ca.ancestor_concept_id=201826)) z",
+    "rubric": null
+  },
+  {
+    "id": 55,
+    "tier": 2,
+    "question": "How many patients aged 80 or older have been exposed to warfarin?",
+    "ground_truth_sql": "SELECT COUNT(DISTINCT de.person_id) AS n FROM drug_era de JOIN person p ON de.person_id=p.person_id WHERE de.drug_concept_id=1310149 AND (2025-p.year_of_birth)>=80",
+    "rubric": null
+  },
+  {
+    "id": 56,
+    "tier": 2,
+    "question": "How many patients with hyperlipidemia have been exposed to a statin?",
+    "ground_truth_sql": "SELECT COUNT(DISTINCT de.person_id) AS n FROM drug_era de JOIN concept_ancestor ca ON de.drug_concept_id=ca.descendant_concept_id WHERE ca.ancestor_concept_id=21601855 AND de.person_id IN (SELECT co.person_id FROM condition_occurrence co JOIN concept_ancestor ca ON co.condition_concept_id=ca.descendant_concept_id WHERE ca.ancestor_concept_id=432867)",
+    "rubric": null
+  },
+  {
+    "id": 57,
+    "tier": 2,
+    "question": "How many patients have a serum glucose lab value greater than 200 mg/dL?",
+    "ground_truth_sql": "SELECT COUNT(DISTINCT person_id) AS n FROM measurement WHERE measurement_concept_id=3004501 AND value_as_number>200 AND value_as_number<2000",
+    "rubric": null
+  },
+  {
+    "id": 58,
+    "tier": 2,
+    "question": "How many patients with heart failure later developed atrial fibrillation (AFib diagnosed after first heart failure diagnosis)?",
+    "ground_truth_sql": "WITH hf AS (SELECT co.person_id, MIN(co.condition_start_date) d FROM condition_occurrence co JOIN concept_ancestor ca ON co.condition_concept_id=ca.descendant_concept_id WHERE ca.ancestor_concept_id=316139 GROUP BY co.person_id), af AS (SELECT co.person_id, MIN(co.condition_start_date) d FROM condition_occurrence co JOIN concept_ancestor ca ON co.condition_concept_id=ca.descendant_concept_id WHERE ca.ancestor_concept_id=313217 GROUP BY co.person_id) SELECT COUNT(*) AS n FROM hf JOIN af ON hf.person_id=af.person_id WHERE af.d>hf.d",
+    "rubric": null
+  },
+  {
+    "id": 59,
+    "tier": 2,
+    "question": "Among patients on a statin, how many have at least one LDL cholesterol measurement?",
+    "ground_truth_sql": "SELECT COUNT(DISTINCT m.person_id) AS n FROM measurement m WHERE m.measurement_concept_id=3028437 AND m.person_id IN (SELECT de.person_id FROM drug_era de JOIN concept_ancestor ca ON de.drug_concept_id=ca.descendant_concept_id WHERE ca.ancestor_concept_id=21601855)",
+    "rubric": null
+  },
+  {
+    "id": 60,
+    "tier": 2,
+    "question": "How many patients have an inpatient visit recorded?",
+    "ground_truth_sql": "SELECT COUNT(DISTINCT person_id) AS n FROM visit_occurrence WHERE visit_concept_id=9201",
+    "rubric": null
+  },
+  {
+    "id": 61,
+    "tier": 3,
+    "question": "Among patients with heart failure, what are the most common comorbid conditions?",
+    "ground_truth_sql": "SELECT TOP 10 c.concept_name, COUNT(DISTINCT co.person_id) AS n FROM condition_occurrence co JOIN concept c ON co.condition_concept_id=c.concept_id WHERE co.condition_concept_id<>0 AND co.person_id IN (SELECT co.person_id FROM condition_occurrence co JOIN concept_ancestor ca ON co.condition_concept_id=ca.descendant_concept_id WHERE ca.ancestor_concept_id=316139) GROUP BY c.concept_name ORDER BY n DESC",
+    "rubric": null
+  },
+  {
+    "id": 62,
+    "tier": 3,
+    "question": "For patients exposed to warfarin, what fraction have an INR measurement and what is the median INR?",
+    "ground_truth_sql": "SELECT (SELECT COUNT(DISTINCT person_id) FROM drug_era WHERE drug_concept_id=1310149) AS warfarin_n, (SELECT COUNT(DISTINCT m.person_id) FROM measurement m WHERE m.measurement_concept_id IN (3022217,3042605) AND m.person_id IN (SELECT person_id FROM drug_era WHERE drug_concept_id=1310149)) AS warfarin_with_inr, (SELECT DISTINCT PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY value_as_number) OVER () FROM measurement WHERE measurement_concept_id IN (3022217,3042605) AND value_as_number>0 AND value_as_number<20 AND person_id IN (SELECT person_id FROM drug_era WHERE drug_concept_id=1310149)) AS median_inr",
+    "rubric": null
+  },
+  {
+    "id": 63,
+    "tier": 3,
+    "question": "Among patients with type 2 diabetes who have an HbA1c result, what is the distribution of glycemic control (<7, 7-9, >=9)?",
+    "ground_truth_sql": "SELECT CASE WHEN value_as_number<7 THEN '<7' WHEN value_as_number<9 THEN '7-9' ELSE '>=9' END AS bucket, COUNT(DISTINCT person_id) AS n FROM measurement WHERE measurement_concept_id IN (3005673,3004410,36032094,3007263) AND value_as_number>=3 AND value_as_number<20 AND person_id IN (SELECT co.person_id FROM condition_occurrence co JOIN concept_ancestor ca ON co.condition_concept_id=ca.descendant_concept_id WHERE ca.ancestor_concept_id=201826) GROUP BY CASE WHEN value_as_number<7 THEN '<7' WHEN value_as_number<9 THEN '7-9' ELSE '>=9' END",
+    "rubric": null
+  },
+  {
+    "id": 64,
+    "tier": 3,
+    "question": "What is the age (decade) distribution of the heart failure cohort?",
+    "ground_truth_sql": "SELECT (2025-p.year_of_birth)/10*10 AS decade, COUNT(DISTINCT p.person_id) AS n FROM person p WHERE p.person_id IN (SELECT co.person_id FROM condition_occurrence co JOIN concept_ancestor ca ON co.condition_concept_id=ca.descendant_concept_id WHERE ca.ancestor_concept_id=316139) GROUP BY (2025-p.year_of_birth)/10*10 ORDER BY decade",
+    "rubric": null
+  },
+  {
+    "id": 65,
+    "tier": 3,
+    "question": "Among patients with type 2 diabetes, what are the most commonly prescribed medications (ingredient level)?",
+    "ground_truth_sql": "SELECT TOP 10 c.concept_name, COUNT(DISTINCT de.person_id) AS n FROM drug_era de JOIN concept c ON de.drug_concept_id=c.concept_id WHERE de.person_id IN (SELECT co.person_id FROM condition_occurrence co JOIN concept_ancestor ca ON co.condition_concept_id=ca.descendant_concept_id WHERE ca.ancestor_concept_id=201826) GROUP BY c.concept_name ORDER BY n DESC",
+    "rubric": null
+  },
+  {
+    "id": 66,
+    "tier": 3,
+    "question": "What is the distribution of visit types (visit_concept_id) across all visit occurrences?",
+    "ground_truth_sql": "SELECT c.concept_name, COUNT(*) AS n FROM visit_occurrence v JOIN concept c ON v.visit_concept_id=c.concept_id GROUP BY c.concept_name ORDER BY n DESC",
+    "rubric": null
+  },
+  {
+    "id": 67,
+    "tier": 3,
+    "question": "How many patients have all three of the cardiometabolic triad: type 2 diabetes, hypertension, AND hyperlipidemia?",
+    "ground_truth_sql": "SELECT COUNT(*) AS n FROM ((SELECT co.person_id FROM condition_occurrence co JOIN concept_ancestor ca ON co.condition_concept_id=ca.descendant_concept_id WHERE ca.ancestor_concept_id=201826) INTERSECT (SELECT co.person_id FROM condition_occurrence co JOIN concept_ancestor ca ON co.condition_concept_id=ca.descendant_concept_id WHERE ca.ancestor_concept_id=320128) INTERSECT (SELECT co.person_id FROM condition_occurrence co JOIN concept_ancestor ca ON co.condition_concept_id=ca.descendant_concept_id WHERE ca.ancestor_concept_id=432867)) z",
+    "rubric": null
+  },
+  {
+    "id": 68,
+    "tier": 3,
+    "question": "Among patients with both type 2 diabetes and chronic kidney disease, how many are on metformin (relevant because metformin is often dose-adjusted or avoided in CKD)?",
+    "ground_truth_sql": "SELECT COUNT(*) AS n FROM ((SELECT co.person_id FROM condition_occurrence co JOIN concept_ancestor ca ON co.condition_concept_id=ca.descendant_concept_id WHERE ca.ancestor_concept_id=201826) INTERSECT (SELECT co.person_id FROM condition_occurrence co JOIN concept_ancestor ca ON co.condition_concept_id=ca.descendant_concept_id WHERE ca.ancestor_concept_id=46271022) INTERSECT (SELECT person_id FROM drug_era WHERE drug_concept_id=1503297)) z",
+    "rubric": null
+  },
+  {
+    "id": 69,
+    "tier": 3,
+    "question": "What fraction of patients in the database have a recorded death?",
+    "ground_truth_sql": "SELECT (SELECT COUNT(*) FROM death) AS deaths, (SELECT COUNT(*) FROM person) AS persons",
+    "rubric": null
+  },
+  {
+    "id": 70,
+    "tier": 3,
+    "question": "What is the most common single measurement concept in the database (by number of result rows)?",
+    "ground_truth_sql": "SELECT TOP 5 m.measurement_concept_id, c.concept_name, COUNT_BIG(*) AS n FROM measurement m JOIN concept c ON m.measurement_concept_id=c.concept_id GROUP BY m.measurement_concept_id, c.concept_name ORDER BY n DESC",
+    "rubric": null
+  },
+  {
+    "id": 71,
+    "tier": 3,
+    "question": "Among patients with hypertension, what fraction are on an ACE inhibitor exemplar (lisinopril)?",
+    "ground_truth_sql": "SELECT (SELECT COUNT(DISTINCT co.person_id) FROM condition_occurrence co JOIN concept_ancestor ca ON co.condition_concept_id=ca.descendant_concept_id WHERE ca.ancestor_concept_id=320128) AS htn_n, (SELECT COUNT(*) FROM ((SELECT co.person_id FROM condition_occurrence co JOIN concept_ancestor ca ON co.condition_concept_id=ca.descendant_concept_id WHERE ca.ancestor_concept_id=320128) INTERSECT (SELECT person_id FROM drug_era WHERE drug_concept_id=1308216)) z) AS htn_on_lisinopril",
+    "rubric": null
+  },
+  {
+    "id": 72,
+    "tier": 3,
+    "question": "Among the heart-failure cohort, what is the breakdown by gender?",
+    "ground_truth_sql": "SELECT c.concept_name, COUNT(DISTINCT p.person_id) AS n FROM person p JOIN concept c ON p.gender_concept_id=c.concept_id WHERE p.person_id IN (SELECT co.person_id FROM condition_occurrence co JOIN concept_ancestor ca ON co.condition_concept_id=ca.descendant_concept_id WHERE ca.ancestor_concept_id=316139) GROUP BY c.concept_name ORDER BY n DESC",
+    "rubric": null
+  },
+  {
+    "id": 73,
+    "tier": 3,
+    "question": "Among patients with type 2 diabetes, what fraction have at least one HbA1c measurement on record?",
+    "ground_truth_sql": "SELECT (SELECT COUNT(DISTINCT co.person_id) FROM condition_occurrence co JOIN concept_ancestor ca ON co.condition_concept_id=ca.descendant_concept_id WHERE ca.ancestor_concept_id=201826) AS t2dm_n, (SELECT COUNT(DISTINCT m.person_id) FROM measurement m WHERE m.measurement_concept_id IN (3005673,3004410,36032094,3007263) AND m.person_id IN (SELECT co.person_id FROM condition_occurrence co JOIN concept_ancestor ca ON co.condition_concept_id=ca.descendant_concept_id WHERE ca.ancestor_concept_id=201826)) AS t2dm_with_hba1c",
+    "rubric": null
+  },
+  {
+    "id": 74,
+    "tier": 3,
+    "question": "What is the distribution of patients by birth decade?",
+    "ground_truth_sql": "SELECT (year_of_birth/10)*10 AS birth_decade, COUNT(*) AS n FROM person WHERE year_of_birth IS NOT NULL GROUP BY (year_of_birth/10)*10 ORDER BY birth_decade",
+    "rubric": null
+  },
+  {
+    "id": 75,
+    "tier": 3,
+    "question": "Among patients on warfarin, how many also have atrial fibrillation versus another indication (no AFib)?",
+    "ground_truth_sql": "SELECT (SELECT COUNT(*) FROM ((SELECT person_id FROM drug_era WHERE drug_concept_id=1310149) INTERSECT (SELECT co.person_id FROM condition_occurrence co JOIN concept_ancestor ca ON co.condition_concept_id=ca.descendant_concept_id WHERE ca.ancestor_concept_id=313217)) z) AS warfarin_with_afib, (SELECT COUNT(DISTINCT person_id) FROM drug_era WHERE drug_concept_id=1310149) AS warfarin_total",
+    "rubric": null
+  },
+  {
+    "id": 76,
+    "tier": 3,
+    "question": "Among patients with chronic kidney disease, what are the most common comorbid conditions?",
+    "ground_truth_sql": "SELECT TOP 10 c.concept_name, COUNT(DISTINCT co.person_id) AS n FROM condition_occurrence co JOIN concept c ON co.condition_concept_id=c.concept_id WHERE co.condition_concept_id<>0 AND co.person_id IN (SELECT co.person_id FROM condition_occurrence co JOIN concept_ancestor ca ON co.condition_concept_id=ca.descendant_concept_id WHERE ca.ancestor_concept_id=46271022) GROUP BY c.concept_name ORDER BY n DESC",
+    "rubric": null
+  },
+  {
+    "id": 77,
+    "tier": 3,
+    "question": "Among patients with type 2 diabetes on metformin, how many subsequently started insulin (insulin first exposure after first metformin exposure)?",
+    "ground_truth_sql": "WITH mf AS (SELECT person_id, MIN(drug_era_start_date) fd FROM drug_era WHERE drug_concept_id=1503297 GROUP BY person_id), ins AS (SELECT de.person_id, MIN(de.drug_era_start_date) id FROM drug_era de JOIN concept_ancestor ca ON de.drug_concept_id=ca.descendant_concept_id WHERE ca.ancestor_concept_id=21600713 GROUP BY de.person_id) SELECT COUNT(*) AS n FROM mf JOIN ins ON mf.person_id=ins.person_id WHERE ins.id>mf.fd AND mf.person_id IN (SELECT co.person_id FROM condition_occurrence co JOIN concept_ancestor ca ON co.condition_concept_id=ca.descendant_concept_id WHERE ca.ancestor_concept_id=201826)",
+    "rubric": null
+  },
+  {
+    "id": 78,
+    "tier": 3,
+    "question": "What is the gender distribution among patients with major depressive disorder?",
+    "ground_truth_sql": "SELECT c.concept_name, COUNT(DISTINCT p.person_id) AS n FROM person p JOIN concept c ON p.gender_concept_id=c.concept_id WHERE p.person_id IN (SELECT co.person_id FROM condition_occurrence co JOIN concept_ancestor ca ON co.condition_concept_id=ca.descendant_concept_id WHERE ca.ancestor_concept_id=4152280) GROUP BY c.concept_name ORDER BY n DESC",
+    "rubric": null
+  },
+  {
+    "id": 79,
+    "tier": 3,
+    "question": "Among patients with an LDL cholesterol > 190 mg/dL, what fraction are on a statin?",
+    "ground_truth_sql": "SELECT (SELECT COUNT(DISTINCT person_id) FROM measurement WHERE measurement_concept_id=3028437 AND value_as_number>190 AND value_as_number<1000) AS high_ldl_n, (SELECT COUNT(DISTINCT m.person_id) FROM measurement m WHERE m.measurement_concept_id=3028437 AND m.value_as_number>190 AND m.value_as_number<1000 AND m.person_id IN (SELECT de.person_id FROM drug_era de JOIN concept_ancestor ca ON de.drug_concept_id=ca.descendant_concept_id WHERE ca.ancestor_concept_id=21601855)) AS high_ldl_on_statin",
+    "rubric": null
+  },
+  {
+    "id": 80,
+    "tier": 3,
+    "question": "Among patients with both COPD and asthma, how many are on albuterol?",
+    "ground_truth_sql": "SELECT COUNT(*) AS n FROM ((SELECT co.person_id FROM condition_occurrence co JOIN concept_ancestor ca ON co.condition_concept_id=ca.descendant_concept_id WHERE ca.ancestor_concept_id=255573) INTERSECT (SELECT co.person_id FROM condition_occurrence co JOIN concept_ancestor ca ON co.condition_concept_id=ca.descendant_concept_id WHERE ca.ancestor_concept_id=317009) INTERSECT (SELECT person_id FROM drug_era WHERE drug_concept_id=1154343)) z",
+    "rubric": null
+  },
+  {
+    "id": 81,
+    "tier": 3,
+    "question": "What is the distribution of the cardiometabolic triad cohort (T2DM+HTN+hyperlipidemia) by race?",
+    "ground_truth_sql": "SELECT c.concept_name, COUNT(DISTINCT p.person_id) AS n FROM person p JOIN concept c ON p.race_concept_id=c.concept_id WHERE p.person_id IN ((SELECT co.person_id FROM condition_occurrence co JOIN concept_ancestor ca ON co.condition_concept_id=ca.descendant_concept_id WHERE ca.ancestor_concept_id=201826) INTERSECT (SELECT co.person_id FROM condition_occurrence co JOIN concept_ancestor ca ON co.condition_concept_id=ca.descendant_concept_id WHERE ca.ancestor_concept_id=320128) INTERSECT (SELECT co.person_id FROM condition_occurrence co JOIN concept_ancestor ca ON co.condition_concept_id=ca.descendant_concept_id WHERE ca.ancestor_concept_id=432867)) GROUP BY c.concept_name ORDER BY n DESC",
+    "rubric": null
+  },
+  {
+    "id": 82,
+    "tier": 3,
+    "question": "Among deceased patients, what fraction had a heart failure diagnosis at any time?",
+    "ground_truth_sql": "SELECT (SELECT COUNT(*) FROM death) AS deaths, (SELECT COUNT(DISTINCT d.person_id) FROM death d WHERE d.person_id IN (SELECT co.person_id FROM condition_occurrence co JOIN concept_ancestor ca ON co.condition_concept_id=ca.descendant_concept_id WHERE ca.ancestor_concept_id=316139)) AS deaths_with_hf",
+    "rubric": null
+  },
+  {
+    "id": 83,
+    "tier": 3,
+    "question": "Among patients with type 2 diabetes, how many have ever had a serum glucose lab value over 200 mg/dL?",
+    "ground_truth_sql": "SELECT COUNT(DISTINCT m.person_id) AS n FROM measurement m WHERE m.measurement_concept_id=3004501 AND m.value_as_number>200 AND m.value_as_number<2000 AND m.person_id IN (SELECT co.person_id FROM condition_occurrence co JOIN concept_ancestor ca ON co.condition_concept_id=ca.descendant_concept_id WHERE ca.ancestor_concept_id=201826)",
+    "rubric": null
+  },
+  {
+    "id": 84,
+    "tier": 3,
+    "question": "Among patients aged 65+, what are the most common chronic conditions (top diagnoses)?",
+    "ground_truth_sql": "SELECT TOP 10 c.concept_name, COUNT(DISTINCT co.person_id) AS n FROM condition_occurrence co JOIN concept c ON co.condition_concept_id=c.concept_id JOIN person p ON co.person_id=p.person_id WHERE co.condition_concept_id<>0 AND (2025-p.year_of_birth)>=65 GROUP BY c.concept_name ORDER BY n DESC",
+    "rubric": null
+  },
+  {
+    "id": 85,
+    "tier": 3,
+    "question": "Among patients with atrial fibrillation, what is the breakdown of anticoagulant exposure: warfarin vs. none-on-warfarin?",
+    "ground_truth_sql": "SELECT (SELECT COUNT(DISTINCT co.person_id) FROM condition_occurrence co JOIN concept_ancestor ca ON co.condition_concept_id=ca.descendant_concept_id WHERE ca.ancestor_concept_id=313217) AS afib_n, (SELECT COUNT(*) FROM ((SELECT co.person_id FROM condition_occurrence co JOIN concept_ancestor ca ON co.condition_concept_id=ca.descendant_concept_id WHERE ca.ancestor_concept_id=313217) INTERSECT (SELECT person_id FROM drug_era WHERE drug_concept_id=1310149)) z) AS afib_on_warfarin",
+    "rubric": null
+  },
+  {
+    "id": 86,
+    "tier": 4,
+    "question": "A 62-year-old patient has polyuria, an elevated fasting glucose, an HbA1c of 8.5%, and is on metformin and insulin. What is the most likely underlying diagnosis, and can you find a comparable cohort in this OMOP database and report its size?",
+    "ground_truth_sql": null,
+    "rubric": [
+      "Identifies type 2 diabetes mellitus as the most likely diagnosis (concept_id 201826) and justifies it from the HbA1c >6.5%, hyperglycemia, and antidiabetic therapy",
+      "Resolves the correct standard concept_ids: T2DM 201826, metformin ingredient 1503297, insulin ATC class 21600713, HbA1c value-bearing LOINC concepts (e.g. 3005673/3004410)",
+      "Builds a comparable cohort using concept_ancestor expansion for the condition and drug class, not just exact-match concept_ids",
+      "Reports a concrete cohort size with supporting counts (e.g. T2DM on both metformin and insulin) rather than only describing the approach",
+      "States assumptions/limitations: age proxied from year_of_birth, HbA1c stored across multiple concepts some without values, exposure inferred from drug_era"
+    ]
+  },
+  {
+    "id": 87,
+    "tier": 4,
+    "question": "A patient has chronic kidney disease, type 2 diabetes, and hypertension, and is on lisinopril and a loop diuretic. What is the most likely unifying clinical picture, and quantify how many similar patients exist in the database?",
+    "ground_truth_sql": null,
+    "rubric": [
+      "Recognizes diabetic kidney disease / diabetic nephropathy (T2DM + HTN + CKD) as the unifying picture",
+      "Maps concepts: CKD 46271022, T2DM 201826, HTN 320128, lisinopril 1308216, loop diuretic e.g. furosemide 956874",
+      "Constructs an intersection cohort (all three conditions) and optionally narrows by the drugs",
+      "Reports a concrete count for the triple-condition cohort and notes it is smaller than any single condition",
+      "Notes clinical rationale (ACE inhibitor + diuretic for renoprotection/BP control) and data limitations"
+    ]
+  },
+  {
+    "id": 88,
+    "tier": 4,
+    "question": "A patient presents with dyspnea, peripheral edema, is on furosemide and metoprolol, and has an abnormal ECG. What underlying cardiac condition is most likely, and find a comparable OMOP cohort?",
+    "ground_truth_sql": null,
+    "rubric": [
+      "Identifies heart failure (concept_id 316139) as the most likely underlying condition",
+      "Maps supporting drugs/findings to concepts (furosemide 956874, metoprolol 1307046) and recognizes ECG abnormality as a comorbid finding",
+      "Builds a heart-failure cohort via concept_ancestor and reports its size (~87,184)",
+      "Optionally refines to HF patients on furosemide (validated 31,310) to mirror the vignette",
+      "States that the inference is probabilistic and lists alternative causes (e.g. COPD, renal failure) and how to disambiguate"
+    ]
+  },
+  {
+    "id": 89,
+    "tier": 4,
+    "question": "Identify a cohort of patients who likely have poorly-controlled type 2 diabetes, and describe how you defined 'poorly controlled'. Report the cohort size.",
+    "ground_truth_sql": null,
+    "rubric": [
+      "Defines poorly-controlled diabetes explicitly (e.g. T2DM diagnosis AND HbA1c >= 9, or >=7) and justifies the threshold",
+      "Uses the value-bearing HbA1c LOINC concepts and bounds the value range to exclude unit errors",
+      "Intersects with the T2DM condition cohort via concept_ancestor",
+      "Reports a concrete size and acknowledges sensitivity to the threshold chosen",
+      "Notes data caveats: HbA1c spread across multiple concepts, some lacking values; latest-vs-any value choice"
+    ]
+  },
+  {
+    "id": 90,
+    "tier": 4,
+    "question": "A researcher wants to study statin under-treatment. Find patients with a high LDL (>190) who are NOT on any statin, and report the count and what fraction of high-LDL patients this represents.",
+    "ground_truth_sql": null,
+    "rubric": [
+      "Defines high LDL using LOINC 3028437 with value_as_number>190 (bounded) ",
+      "Defines 'on a statin' via the statin ATC class 21601855 expanded through concept_ancestor over drug_era",
+      "Computes high-LDL patients NOT in the statin cohort (set difference) and the fraction of all high-LDL patients",
+      "Reports concrete numbers (high-LDL total ~15,411) and the untreated fraction",
+      "Notes limitations: LDL may predate or postdate statin start; lipid-lowering non-statins not counted"
+    ]
+  },
+  {
+    "id": 91,
+    "tier": 4,
+    "question": "Find a cohort comparable to a patient with atrial fibrillation who is NOT anticoagulated (no warfarin), and discuss why this is clinically interesting.",
+    "ground_truth_sql": null,
+    "rubric": [
+      "Builds the AFib cohort (concept 313217) via concept_ancestor (~91,198)",
+      "Defines anticoagulation by warfarin ingredient 1310149 (and ideally acknowledges DOACs are separate ingredients not captured by warfarin alone)",
+      "Computes AFib patients without warfarin exposure and reports the count",
+      "Explains the clinical interest (stroke-prevention treatment gap) while caveating that DOAC use would make many 'untreated' patients actually treated",
+      "States the DOAC limitation explicitly as a key confounder"
+    ]
+  },
+  {
+    "id": 92,
+    "tier": 4,
+    "question": "A patient has obesity, type 2 diabetes, hypertension, and hyperlipidemia. Name the syndrome this constellation suggests and find a comparable cohort, reporting its size.",
+    "ground_truth_sql": null,
+    "rubric": [
+      "Names metabolic syndrome (or cardiometabolic clustering) as the suggested constellation",
+      "Maps all four concepts: obesity 433736, T2DM 201826, HTN 320128, hyperlipidemia 432867",
+      "Builds an intersection cohort (reasonably the T2DM+HTN+hyperlipidemia triad, optionally adding obesity)",
+      "Reports a concrete size (triad ~55,871) and notes adding obesity shrinks it further",
+      "Acknowledges metabolic syndrome has formal criteria (waist circumference, triglycerides, HDL) not all captured here"
+    ]
+  },
+  {
+    "id": 93,
+    "tier": 4,
+    "question": "Given a patient on warfarin with frequent INR monitoring, characterize a comparable cohort: how many warfarin patients have INR labs, and is their anticoagulation in therapeutic range on average?",
+    "ground_truth_sql": null,
+    "rubric": [
+      "Builds the warfarin cohort (ingredient 1310149) and the INR measurement set (LOINC 3022217/3042605)",
+      "Computes the fraction of warfarin patients with at least one INR (~84.7%)",
+      "Computes a central INR statistic (median ~1.8) and compares to the typical therapeutic range (2.0-3.0)",
+      "Interprets that the median sits below typical AFib target range and notes value-range bounding to exclude errors",
+      "States limitations: single aggregate INR ignores time-in-therapeutic-range; indication-specific targets vary"
+    ]
+  },
+  {
+    "id": 94,
+    "tier": 4,
+    "question": "A patient on long-term prednisone develops hyperglycemia. Investigate whether chronic corticosteroid exposure is associated with new diabetes in this database, and outline a cohort to test it.",
+    "ground_truth_sql": null,
+    "rubric": [
+      "Identifies steroid-induced hyperglycemia/diabetes as the hypothesis (prednisone ingredient 1551099)",
+      "Outlines a cohort design: prednisone-exposed patients without prior T2DM, then incident T2DM (201826) after first prednisone exposure",
+      "Specifies a temporal/new-onset criterion (diagnosis after exposure start) to support an association claim",
+      "Reports or proposes concrete counts and acknowledges this is associational, not causal (confounding by indication)",
+      "Notes the comparison needs a steroid-unexposed control group to be meaningful"
+    ]
+  },
+  {
+    "id": 95,
+    "tier": 4,
+    "question": "A clinician asks for a cohort of elderly patients (80+) at high bleeding risk on anticoagulation. Define and size such a cohort, and explain your reasoning.",
+    "ground_truth_sql": null,
+    "rubric": [
+      "Defines elderly as age>=80 via 2025-year_of_birth and anticoagulation via warfarin 1310149 (noting DOACs are additional)",
+      "Optionally enriches 'high bleeding risk' with comorbidities (e.g. CKD 46271022, prior stroke/GI bleed) and explains the choice",
+      "Reports a concrete base count (80+ on warfarin validated 3,917)",
+      "Explains clinical reasoning (age + anticoagulation = elevated bleed risk, HAS-BLED-style logic)",
+      "States limitations: age is a birth-year proxy, bleeding-risk factors are incompletely captured"
+    ]
+  },
+  {
+    "id": 96,
+    "tier": 4,
+    "question": "Two candidate cohorts are proposed for a heart-failure study: (A) any heart-failure diagnosis, (B) heart failure plus a loop diuretic. Compare their sizes and discuss which is a better-defined phenotype.",
+    "ground_truth_sql": null,
+    "rubric": [
+      "Builds both cohorts: HF via concept_ancestor (316139) and HF intersected with furosemide 956874",
+      "Reports both sizes (A ~87,184; B ~31,310) and the proportion B/A",
+      "Argues that requiring treatment (B) increases specificity/PPV but lowers sensitivity, while A is broader/noisier",
+      "Recommends a choice tied to the study aim (e.g. specificity for an outcomes study vs. sensitivity for screening)",
+      "Notes phenotype-validation caveats (single diagnosis code vs. treatment-confirmed)"
+    ]
+  },
+  {
+    "id": 97,
+    "tier": 4,
+    "question": "A patient with COPD and asthma overlap is on albuterol and inhaled steroids. Identify the overlap phenotype, find comparable patients, and report the cohort size.",
+    "ground_truth_sql": null,
+    "rubric": [
+      "Names asthma-COPD overlap (ACO) as the phenotype",
+      "Builds the intersection of COPD (255573) and asthma (317009) via concept_ancestor",
+      "Optionally narrows to albuterol (1154343) exposure to match the vignette",
+      "Reports a concrete overlap size (~23,450) and notes albuterol narrows it",
+      "Acknowledges ACO is itself a debated/loosely-defined entity and that code overlap is an imperfect proxy"
+    ]
+  },
+  {
+    "id": 98,
+    "tier": 4,
+    "question": "Design a cohort to study metformin and incident chronic kidney disease: patients started on metformin who later develop CKD. Report how many develop CKD within 2 years of starting metformin and discuss interpretation.",
+    "ground_truth_sql": null,
+    "rubric": [
+      "Defines index as first metformin exposure (drug_era, ingredient 1503297) and outcome as first CKD (46271022) diagnosis after index",
+      "Applies a 2-year window (DATEADD) and requires CKD onset strictly after index to ensure temporality",
+      "Reports the concrete count (validated 2,200) within 2 years",
+      "Interprets cautiously: association not causation; metformin is often started in patients already at renal risk (confounding by indication)",
+      "Notes need for a comparator group and for excluding pre-existing CKD at baseline"
+    ]
+  },
+  {
+    "id": 99,
+    "tier": 4,
+    "question": "A researcher wants the most common comorbidities co-occurring with heart failure to inform a risk model. Produce the top comorbidities with counts and comment on which are likely causally vs. incidentally related.",
+    "ground_truth_sql": null,
+    "rubric": [
+      "Builds the HF cohort and aggregates co-occurring condition concepts by distinct patients (top-N)",
+      "Returns a concrete ranked list with counts (e.g. hypertension, hyperlipidemia, atrial fibrillation, anemia, CKD among the leaders)",
+      "Distinguishes plausibly causal/shared-etiology comorbidities (HTN, AFib, CAD) from likely symptom/finding codes (dyspnea, chest pain, abnormal ECG)",
+      "Notes that near-duplicate HF codes (e.g. 'Congestive heart failure') appear and should be deduplicated/rolled up",
+      "States limitations: counts are presence-anytime, not temporally ordered relative to HF onset"
+    ]
+  },
+  {
+    "id": 100,
+    "tier": 4,
+    "question": "Given the database as a whole, propose and size a high-value cohort for a real-world evidence study of your choosing (state the clinical question, the phenotype definition, and the cohort size), and critique its main limitation.",
+    "ground_truth_sql": null,
+    "rubric": [
+      "States a concrete, clinically meaningful research question",
+      "Gives an explicit, reproducible phenotype definition with the standard concept_ids and concept_ancestor expansion used",
+      "Reports an actual cohort size obtained by running the query against the DB (not a guess)",
+      "Identifies the single most important threat to validity for the chosen cohort (e.g. confounding by indication, missing labs, code-only phenotype, DOAC/medication capture gaps)",
+      "Demonstrates correct OMOP conventions throughout (distinct person_id counting, ancestor expansion, value-range bounding for labs)"
+    ]
+  }
+]

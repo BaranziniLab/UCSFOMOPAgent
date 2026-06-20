@@ -1,11 +1,11 @@
 {
   "name": "ucsfomopagent",
   "display_name": "UCSFOMOPAgent",
-  "description": "Read-only MCP access to the UCSF OMOP de-identified EHR database.",
-  "version": "0.1.0",
+  "description": "Read-only MCP access to the UCSF OMOP de-identified EHR database, with OMOP/T-SQL context injection and concept/schema/lab-finder tools for fast, robust clinical data retrieval.",
+  "version": "0.2.0",
   "entry_point": "ucsfomopagent",
   "repository": "https://github.com/BaranziniLab/UCSFOMOPAgent",
-  "tools_count": 2,
+  "tools_count": 5,
   "env_vars": [
     {
       "key": "CLINICAL_RECORDS_USERNAME",
@@ -27,6 +27,14 @@
       "auto_propagate": true,
       "default": "INFO",
       "description": "Logging level",
+      "secret": false
+    },
+    {
+      "key": "OMOP_SCHEMA",
+      "required": false,
+      "auto_propagate": true,
+      "default": "omop",
+      "description": "Default DB schema for OMOP tables",
       "secret": false
     }
   ]
