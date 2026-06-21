@@ -142,3 +142,56 @@ driven by *defensible concept-definition choices* (which descendant set / which
 LOINC sub-concepts / age reference-year boundary), not agent errors — e.g. one
 case was within 0.2%. The agent states its concept_ids and assumptions, so these
 are reproducible and auditable. The LLM judge scores them strictly.
+
+---
+
+## Fix #4 — Efficiency & assumption-clarity for complex/open-ended questions (after Q61–100)
+
+### What Tier 3/4 revealed (v3)
+Weighted 73.8% (23 CORRECT / 13 PARTIAL / 4 WRONG) — strong for the hardest
+tiers. The remaining non-CORRECT cases were **definitional, not bugs**:
+distribution questions where bin boundaries / age reference-year differ from
+ground truth, an open-ended cohort defined more strictly than the rubric, and one
+transient MiMo 429. The genuine, generalizable issue was **cost**: open-ended
+Tier-4 questions over-explored (enumerating alternatives, re-running queries to
+reformat).
+
+### Changes (`server.py` instructions)
+- Complex/multi-step: plan first, resolve all concept_ids up front, then one
+  combined query (CTEs ok); never re-run a query just to reformat.
+- Distribution questions: state bin definitions + reference year and produce the
+  whole distribution in a single GROUP BY.
+- Open-ended cohort/diagnosis: form ONE hypothesis, size it with 1–3 targeted
+  queries, report and stop; offer variants in prose, not extra queries.
+
+---
+
+## v0 → v0.2.0 regression (same 12 representative questions)
+
+Identical question set run against the original v0 server and the final v0.2.0
+server (LLM-judge verdicts; counts redacted):
+
+| Metric              | v0 (original) | v0.2.0 (final) |
+|---------------------|--------------:|---------------:|
+| Weighted score      |        58.3%  |     **75.0%**  |
+| CORRECT             |            5  |          **8** |
+| PARTIAL             |            4  |              2 |
+| WRONG               |            3  |              2 |
+| avg iterations      |          6.2  |        **3.8** |
+| avg tool calls      |          5.8  |        **3.2** |
+| avg tokens          |       24,915  |     **20,662** |
+| avg wall seconds    |         65.6  |       **30.4** |
+
+Net: **+16.7 pts correctness, ~45% fewer tool calls, ~2× faster**, with fewer
+tokens despite the added context. The original made a catastrophic lab-trap error
+(off by ~5×) that v0.2.0 fixes.
+
+### Honest caveats
+- Improvement is in aggregate, not uniform per-question. MiMo at temperature 0.1
+  is non-deterministic: one lab question landed on a wrong LDL sub-concept on the
+  final run even though `find_measurement` recommends the right one (the model
+  occasionally ignores the recommendation), and one oncology question lands on a
+  narrower concept than the chosen ground truth.
+- Several "WRONG/PARTIAL" verdicts reflect defensible concept-definition choices
+  and strict LLM-judge grading on open-ended rubrics rather than agent errors;
+  the agent states its concept_ids and assumptions so results are auditable.
