@@ -11,7 +11,8 @@ import httpx
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
-EXT_DIR = os.path.expanduser("~/.config/biorouter/extensions/ucsfomopagent")
+EXT_DIR = os.environ.get("OMOP_EXT_DIR",
+                         os.path.expanduser("~/.config/biorouter/extensions/ucsfomopagent"))
 MIMO_HOST = "https://token-plan-sgp.xiaomimimo.com/v1"
 MIMO_MODEL = "mimo-v2.5-pro"
 
