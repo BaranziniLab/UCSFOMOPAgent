@@ -7,7 +7,7 @@ name = "ucsfomopagent"
 version = "0.2.0"
 description = "An MCP server for querying the UCSF OMOP electronic health records database for rapid clinical data retrieval"
 readme = "README.md"
-license = {text = "MIT"}
+license = {text = "Apache-2.0"}
 authors = [
     {name = "Wanjun Gu", email = "wanjun.gu@ucsf.edu"},
     {name = "Gianmarco Bellucci", email = "gianmarco.bellucci@ucsf.edu"}
