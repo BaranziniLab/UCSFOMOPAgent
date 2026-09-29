@@ -23,3 +23,8 @@ Jobs survive MCP/chat disconnects, not host shutdown. Interrupted exports requir
 explicit resubmission; arbitrary queries do not have automatic checkpoint/resume.
 Network, permissions, database resource limits and disk exhaustion can still fail.
 These limits are reported; this release does not promise every query can succeed.
+
+Dependency locks were refreshed to patched releases, including cryptography 50+.
+The old Intel macOS compatibility cap was removed; Intel installations without a
+compatible wheel may require Rust/OpenSSL build prerequisites. pip-audit found no
+known vulnerabilities in the resolved dependency set on the test platform.

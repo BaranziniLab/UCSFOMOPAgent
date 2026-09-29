@@ -29,3 +29,7 @@ Reproduce credential-free checks with `uv run python -m unittest discover -s tes
 For authorized live checks, inject credentials from a secret manager and run
 `uv run python scripts/live_smoke.py`. Returned row totals and timings are logged;
 row contents and credentials are not.
+
+After refreshing the dependency locks and requiring cryptography 50+, pip-audit
+reported no known vulnerabilities in the resolved dependency set on this test
+platform. The former Intel macOS cryptography<49 cap was removed.

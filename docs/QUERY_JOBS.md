@@ -125,3 +125,8 @@ Opt-in live smoke test (requires authorized environment credentials and network)
 `uv run python scripts/live_smoke.py`. It checks MCP registration, a small real-
 table query and a monitored 10,000-row export, selecting constants to avoid
 exporting patient details. CI does not use production credentials.
+
+Security updates remove the former Intel-macOS cryptography<49 constraint.
+Patched cryptography 50+ is required. If a compatible Intel macOS wheel is not
+available, install the upstream Rust/OpenSSL build prerequisites or use a
+supported Python/platform combination; do not restore a vulnerable version cap.
