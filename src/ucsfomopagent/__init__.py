@@ -1,12 +1,10 @@
-"""
-UCSFOMOPAgent - UCSF OMOP Clinical Database MCP Server
+"""UCSFOMOPAgent database connector."""
+__version__ = "0.3.0"
+__all__ = ['create_ucsf_omop_server', 'main', 'UCSFOMOPConfig', '__version__']
 
-An MCP server for querying the UCSF OMOP electronic health records database
-for rapid clinical data retrieval.
-"""
 
-__version__ = "0.2.0"
-
-from ucsfomopagent.server import create_ucsf_omop_server, main, UCSFOMOPConfig
-
-__all__ = ["create_ucsf_omop_server", "main", "UCSFOMOPConfig", "__version__"]
+def __getattr__(name):
+    if name in __all__:
+        from . import server
+        return getattr(server, name)
+    raise AttributeError(name)

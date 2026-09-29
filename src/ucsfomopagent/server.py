@@ -18,17 +18,19 @@ import json
 import logging
 import os
 import re
-import sys
 import threading
 import time
-from typing import Any, Literal, Optional
+from typing import Literal, Optional
 
 import pymssql
 from fastmcp.exceptions import ToolError
 from fastmcp.server import FastMCP
-from fastmcp.tools.tool import ToolResult, TextContent
+from fastmcp.tools import ToolResult
+from mcp.types import TextContent
 from mcp.types import ToolAnnotations
 from pydantic import BaseModel, Field
+
+from ucsfomopagent.jobs import INSTRUCTIONS as JOB_INSTRUCTIONS, register_job_tools
 
 logger = logging.getLogger("UCSFOMOPAgent")
 
@@ -48,133 +50,43 @@ MAX_RESULT_ROWS = int(os.getenv("OMOP_MAX_RESULT_ROWS", "2000"))  # cap payloads
 # drift should be discovered live via get_omop_schema.
 # ---------------------------------------------------------------------------
 OMOP_INSTRUCTIONS = """\
-You are querying the **UCSF OMOP de-identified EHR database** (OMOP CDM v5.4) on
-**Microsoft SQL Server**. It holds **7.17 million patients**. Access is READ-ONLY.
+You query the UCSF de-identified OMOP CDM on Microsoft SQL Server, read-only.
+Use get_omop_schema for current tables, approximate metadata row counts and columns.
+Do not treat historical population sizes, empty tables or date ranges as current facts.
 
-## How to be fast and correct (read this first)
-1. Resolve clinical terms to concept_ids BEFORE writing SQL — never guess
-   concept_ids and never LIKE-scan `*_source_value` on the big event tables:
-   - Diseases / drugs / procedures → `search_concepts`.
-   - **Labs / vitals (anything in the `measurement` table) → `find_measurement`**
-     (it returns the concept_ids that actually carry values + their ranges).
-2. Use `get_omop_schema` if unsure of a table's columns (read live — trust it).
-3. Then write ONE well-targeted query with `query_ucsf_omop`. You MAY start a
-   query with a `-- comment`.
+Discovery and execution:
+- Resolve conditions, drugs and procedures with search_concepts before writing SQL.
+  It matches literal words or codes, not synonyms. Standard concepts generally map
+  to event columns; ATC classes require standard_only=false and concept_ancestor.
+- find_measurement returns candidate labs with up to 100 nonrandom numeric rows per
+  concept, separated by unit. These are presence samples, NOT population coverage.
+  Review specimen, assay, concept and unit before combining results or thresholds.
+  recommended_concept_ids are candidates, not an exhaustive clinical definition.
+  Its full_profile_query can be submitted as a monitored job for exact statistics.
+  Coded nonnumeric measurements need value_as_concept_id queries after discovery.
+- query_ucsf_omop is for small previews and inexpensive queries, with a short timeout
+  and capped output. A TOP bound limits returned rows, not database computation.
+  For slow aggregates, large exports, uncertain costs or timeouts, use
+  omop-submit_query_job once, then omop-query_job_status at recommended intervals.
+  Use estimated plans when permitted, avoid full COUNT scans solely for estimates,
+  and report unknown ETA honestly. Never claim every query is guaranteed to finish.
 
-## SQL dialect (Microsoft SQL Server / T-SQL) — common mistakes
-- Row limiting: use `SELECT TOP 100 ...`. **There is no `LIMIT`** (it errors).
-- For "top N per group" use `ROW_NUMBER() OVER (...)`. Median: `PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY x) OVER ()`.
-- String concat is `+`; current date is `GETDATE()`; date math is `DATEDIFF(year,a,b)` / `DATEADD(...)`.
-- Tables are in the `omop` schema, which is the default — reference them
-  UNQUALIFIED (e.g. `FROM person`, `FROM condition_occurrence`).
-
-## OMOP data model essentials
-- One row per patient in `person` (`person_id`). **Count cohorts with `COUNT(DISTINCT person_id)`**, never `COUNT(*)`.
-- Clinical events live in domain tables and reference a STANDARD `*_concept_id`
-  that joins to the `concept` vocabulary table:
-  - `condition_occurrence.condition_concept_id`  (diagnoses; standard = SNOMED)
-  - `drug_exposure.drug_concept_id`              (medications; standard = RxNorm)
-  - `measurement.measurement_concept_id`         (labs & vitals; standard = LOINC)
-  - `procedure_occurrence.procedure_concept_id`  (procedures; CPT4/SNOMED/ICD10PCS)
-  - `observation.observation_concept_id`         (social hx, etc.)
-  - `visit_occurrence.visit_concept_id`          (encounters)
-- **Disease/drug-class cohorts must expand the hierarchy.** A standard concept
-  has many descendant concepts. To find every patient with e.g. "diabetes" or
-  on "any statin", join through `concept_ancestor`:
-  ```
-  SELECT COUNT(DISTINCT co.person_id)
-  FROM condition_occurrence co
-  JOIN concept_ancestor ca ON co.condition_concept_id = ca.descendant_concept_id
-  WHERE ca.ancestor_concept_id = <standard concept_id from search_concepts>
-  ```
-- For "patient exposed to drug ingredient X", `drug_era` (ingredient-level,
-  pre-rolled) is the simplest: `drug_era.drug_concept_id` = the ingredient.
-- For a **drug CLASS** ("any statin", "any insulin", "any anticoagulant"),
-  resolve the class concept (e.g. an ATC class or ingredient) with
-  search_concepts, then JOIN `concept_ancestor` to its descendants — do NOT
-  write `WHERE drug_concept_id IN (SELECT concept_id FROM concept WHERE
-  concept_name LIKE '%insulin%')`; that is slow and imprecise. Pattern:
-  ```
-  SELECT COUNT(DISTINCT de.person_id) FROM drug_era de
-  JOIN concept_ancestor ca ON de.drug_concept_id = ca.descendant_concept_id
-  WHERE ca.ancestor_concept_id = <class/ingredient concept_id>
-  ```
-- `condition_era` rolls condition_occurrence into episodes.
-
-## Demographics (concept_ids you can use directly)
-- gender_concept_id: 8507 = Male, 8532 = Female.
-- ethnicity_concept_id: 38003563 = Hispanic or Latino, 38003564 = Not Hispanic,
-  8552 = Unknown.  race_concept_id: 8527 White, 8516 Black/African American,
-  8515 Asian, 8552 Unknown.
-- **Caveat: race is ~47% Unknown and ethnicity ~57% Unknown** — always report
-  the Unknown share when giving demographic breakdowns.
-- Age: there is no age column; compute from `year_of_birth` (e.g.
-  `YEAR(GETDATE()) - year_of_birth`). `birth_datetime` is populated.
-
-## Measurements / labs (the largest table: 1.24 BILLION rows)
-- Call `find_measurement('<lab name>')` first; it gives you the concept_id(s)
-  that actually carry values plus their range. **Filter `measurement` DIRECTLY by
-  those measurement_concept_id(s)** (use `IN (...)` for several LOINC ids of the
-  same lab). NEVER expand measurement concepts through `concept_ancestor` and
-  never scan `measurement` unfiltered.
-- TRAP: the nominally-standard SNOMED concept for a lab often has NO
-  `value_as_number` (e.g. HbA1c SNOMED 4184637 is value-less; the values live on
-  LOINC concepts like 3004410). `find_measurement` already filters to
-  value-bearing concepts, so trust it over a plain search_concepts result.
-- `find_measurement` returns a `recommended_concept_ids` list — use it verbatim
-  (`measurement_concept_id IN (...)`) and DO NOT re-query the value distribution;
-  it already covers the lab's numeric rows. Picking one rare sub-concept yourself
-  is the usual cause of an implausibly tiny count.
-- Lab values are in `value_as_number`; units in `unit_concept_id`. Bound absurd
-  values (de-id outliers exist) when computing thresholds. Some results are
-  coded in `value_as_concept_id` (e.g. positive/negative) — check both.
-- **Cohort + lab questions** ("among patients with X, how many have lab > t"):
-  use a CTE for the cohort, then filter measurement by concept_id — do NOT write
-  one 4-table join across condition_occurrence × concept_ancestor × measurement
-  (it times out on the 1.24B-row table). Pattern:
-  ```
-  WITH cohort AS (
-    SELECT DISTINCT co.person_id FROM condition_occurrence co
-    JOIN concept_ancestor ca ON co.condition_concept_id=ca.descendant_concept_id
-    WHERE ca.ancestor_concept_id = <disease concept_id>)
-  SELECT COUNT(DISTINCT m.person_id) FROM measurement m
-  JOIN cohort ON cohort.person_id = m.person_id
-  WHERE m.measurement_concept_id IN (<recommended ids>) AND m.value_as_number > <t>
-  ```
-
-## De-identification & data-quality caveats (avoid wrong answers)
-- Dates are shifted per-patient for de-id. There are impossible-future date
-  tails (years up to ~2599). For time-trend questions, bound with a sane window
-  (e.g. `WHERE condition_start_date BETWEEN '2011-01-01' AND '2025-12-31'`).
-- The real data mass spans ~2000–2025 and ramps after 2011 (Epic go-live).
-- **Empty tables — do not query:** note, note_nlp, cohort, cohort_definition,
-  cost, specimen, metadata, fact_relationship, payer_plan_period, dose_era,
-  source_to_concept_map.
-- **Unpopulated columns:** drug_exposure.days_supply & route_concept_id,
-  condition_occurrence.condition_status_concept_id, person.location_id
-  (NO geography data exists). death.cause_concept_id is empty (~0).
-- UCSF adds row-for-row `*_extension` tables (source-EHR lineage) and
-  `concept_recommended` (curated source→standard mappings); you rarely need them.
-
-## Complex, multi-step, and open-ended questions
-- Plan first, then execute with FEW queries. Resolve all needed concept_ids
-  up front (search_concepts / find_measurement), then write one combined query
-  (CTEs are fine) rather than many incremental ones. Do not re-run a query just
-  to reformat — compute everything you need in one pass.
-- For DISTRIBUTION questions (by age decade, by category, by value band), state
-  the bin definitions and reference year you use (e.g. "age = 2025 −
-  year_of_birth", "HbA1c bands <7 / 7–9 / >9"); produce the whole distribution
-  in a single GROUP BY.
-- For OPEN-ENDED cohort/diagnosis questions, form ONE hypothesis, size it with
-  1–3 targeted queries, report the cohort definition + size + supporting counts,
-  and stop. Do not exhaustively enumerate every alternative — that wastes time
-  and tokens. Offer broader/narrower variants in prose instead of querying them all.
-
-## Answering style
-- State the key number(s) clearly, the cohort definition you used, the
-  concept_id(s) you resolved, and any assumption (e.g. "diabetes = SNOMED
-  201826 + descendants"). If a result looks implausible (date tails, Unknowns),
-  flag it. Prefer one good query over many exploratory ones.
+SQL and clinical correctness:
+- SQL Server uses SELECT TOP n, not LIMIT. Use explicit columns and selective
+  concept/date/person filters. Tables normally resolve in omop; verify the schema.
+- Count distinct person_id for patient cohorts. Avoid multiplying rows when joining
+  event tables: use EXISTS or distinct cohort IDs. CTEs do not force materialization
+  or guarantee faster execution; inspect plans for expensive joins.
+- Expand disease or drug classes via concept_ancestor. drug_era is ingredient-level;
+  drug_exposure is for individual exposures. Keep cohort definitions explicit.
+- Filter measurement directly on selected measurement_concept_id values. Do not
+  ancestor-expand numeric labs without confirming clinical equivalence. Keep units
+  separate, and state any outlier exclusions instead of silently discarding values.
+- concept_id=0 is unmapped. Report Unknown demographics. Dates are shifted per person;
+  assess available ranges and agree a date window before time-trend analysis.
+  YEAR(reference_date)-year_of_birth is an approximate age, not exact age.
+- Present aggregate results, concepts, filters, units, assumptions and limitations.
+  Keep full exports local; do not paste row-level clinical data or credentials into chat.
 """
 
 
@@ -188,45 +100,17 @@ class UCSFOMOPConfig(BaseModel):
     log_level: str = Field("INFO", description="Logging level (DEBUG, INFO, WARNING, ERROR)")
 
 
-def _is_write_query(query: str) -> bool:
-    """Check if the query contains write operations"""
-    return re.search(
-        r"\b(MERGE|CREATE|SET|DELETE|REMOVE|ADD|INSERT|UPDATE|DROP|ALTER|TRUNCATE|GRANT|REVOKE|EXEC|EXECUTE|SP_)\b",
-        query, re.IGNORECASE) is not None
-
-
-def _strip_leading_comments(q: str) -> str:
-    """Remove leading -- line comments and /* */ block comments so a query that
-    starts with an explanatory comment is still recognized as a SELECT/WITH."""
-    q = q.lstrip()
-    while q:
-        if q.startswith("--"):
-            nl = q.find("\n")
-            q = (q[nl + 1:] if nl != -1 else "").lstrip()
-        elif q.startswith("/*"):
-            end = q.find("*/")
-            q = (q[end + 2:] if end != -1 else "").lstrip()
-        else:
-            break
-    return q
-
-
 class ClinicalQueryValidator:
     """Clinical record query validator for read-only operations"""
 
     @staticmethod
     def is_read_only_clinical_query(query: str) -> bool:
-        # Tolerate leading SQL comments (the model often annotates its queries).
-        body = _strip_leading_comments(query).upper()
-        allowed_statements = ['SELECT', 'WITH', 'DECLARE']
-        if not any(body.startswith(stmt) for stmt in allowed_statements):
+        from .jobs import validate_query
+        try:
+            validate_query(query, 'sql')
+            return True
+        except ValueError:
             return False
-        if _is_write_query(query):
-            return False
-        # block stacked statements like "; drop ..." (a single trailing ; is fine)
-        if re.search(r';\s*\w', query.rstrip().rstrip(';')):
-            return False
-        return True
 
 
 def _escape_like(s: str) -> str:
@@ -238,16 +122,16 @@ def create_ucsf_omop_server(config: UCSFOMOPConfig) -> FastMCP:
     """Create UCSFOMOPAgent server with UCSF OMOP clinical database tools"""
 
     logging.basicConfig(level=getattr(logging, config.log_level.upper()))
-    mcp = FastMCP("UCSFOMOPAgent", instructions=OMOP_INSTRUCTIONS)
+    mcp = FastMCP("UCSFOMOPAgent", instructions=OMOP_INSTRUCTIONS + JOB_INSTRUCTIONS)
 
     # --- pooled connection (reused across tool calls; reconnect on failure) ---
-    _conn_lock = threading.Lock()
+    _conn_lock = threading.RLock()
     _conn_holder: dict = {"conn": None}
 
     def _new_connection():
         return pymssql.connect(server=config.server, user=config.username,
                                password=config.password, database=config.database,
-                               timeout=120, login_timeout=20)
+                               timeout=30, login_timeout=20, autocommit=True)
 
     def get_conn():
         with _conn_lock:
@@ -268,32 +152,44 @@ def create_ucsf_omop_server(config: UCSFOMOPConfig) -> FastMCP:
             try:
                 conn = _new_connection()
             except Exception as e:
-                logger.error(f"Clinical records connection failed: {e}")
-                raise ToolError(f"Clinical records connection failed: {e}")
+                logger.error("Clinical records connection failed (%s)", type(e).__name__)
+                raise ToolError("Clinical records connection failed; check network access and configured credentials.") from None
             _conn_holder["conn"] = conn
             return conn
 
     def _run(sql: str, cap: Optional[int] = MAX_RESULT_ROWS):
         """Execute SELECT, return (columns, rows, truncated, elapsed)."""
-        conn = get_conn()
-        cur = conn.cursor()
-        t = time.time()
-        cur.execute(sql)
-        columns = [d[0] for d in cur.description] if cur.description else []
-        if cap is None:
-            rows = cur.fetchall()
-            truncated = False
-        else:
-            rows = cur.fetchmany(cap + 1)
-            truncated = len(rows) > cap
-            rows = rows[:cap]
-        cur.close()
-        return columns, rows, truncated, time.time() - t
+        with _conn_lock:
+            conn = get_conn()
+            cur = conn.cursor()
+            t = time.monotonic()
+            try:
+                cur.execute(sql)
+                columns = [d[0] for d in cur.description] if cur.description else []
+                rows = cur.fetchall() if cap is None else cur.fetchmany(cap + 1)
+                truncated = cap is not None and len(rows) > cap
+                return columns, rows if cap is None else rows[:cap], truncated, time.monotonic() - t
+            except Exception:
+                _conn_holder["conn"] = None
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+                raise
+            finally:
+                try:
+                    cur.close()
+                except Exception:
+                    pass
 
     def _csv(columns, rows):
-        lines = [",".join(columns)]
-        lines.extend(",".join("" if v is None else str(v) for v in row) for row in rows)
-        return "\n".join(lines)
+        import csv
+        import io
+        out = io.StringIO()
+        writer = csv.writer(out, lineterminator="\n")
+        writer.writerow(columns)
+        writer.writerows(rows)
+        return out.getvalue()
 
     # ---------------------------- query tool ----------------------------
     @mcp.tool(
@@ -329,22 +225,22 @@ def create_ucsf_omop_server(config: UCSFOMOPConfig) -> FastMCP:
             if truncated:
                 footer = (f"\n\n[TRUNCATED to {len(rows)} rows ({elapsed:.1f}s). "
                           f"Add aggregation (COUNT/GROUP BY) or a tighter filter "
-                          f"instead of returning raw rows.]")
+                          f"or use omop-submit_query_job for a complete local export.]")
             logger.debug(f"query returned {len(rows)} rows in {elapsed:.1f}s")
             return ToolResult(content=[TextContent(type="text", text=text + footer)])
         except ToolError:
             raise
         except Exception as e:
             msg = str(e)
-            hint = ""
+            hint = " Use omop-submit_query_job for slow queries or full exports; monitor omop-query_job_status."
             if re.search(r"LIMIT", msg, re.IGNORECASE):
                 hint = " HINT: use `TOP n` instead of `LIMIT` (SQL Server)."
             elif "Invalid object name" in msg:
                 hint = " HINT: check the table name with get_omop_schema (no args lists all tables)."
             elif "Invalid column name" in msg:
                 hint = " HINT: check columns with get_omop_schema('<table>')."
-            logger.error(f"query error: {e}")
-            raise ToolError(f"EHR query error: {msg}{hint}")
+            logger.error("Clinical query failed (%s)", type(e).__name__)
+            raise ToolError(f"EHR query failed.{hint}") from None
 
     # ---------------------------- schema tool ----------------------------
     _schema_cache: dict = {"tables": None, "cols": {}}
@@ -356,8 +252,8 @@ def create_ucsf_omop_server(config: UCSFOMOPConfig) -> FastMCP:
             destructiveHint=False, idempotentHint=True, openWorldHint=False))
     def get_omop_schema(
         table: Optional[str] = Field(default=None, description=(
-            "Table name to describe (columns + types). Omit to list all "
-            "populated tables with row counts."))
+            "Table name to describe (columns + types). Omit to list tables "
+            "in the configured schema with approximate metadata row counts."))
     ) -> ToolResult:
         """Introspect the live OMOP schema. No args -> list tables with row counts
         (so you never query an empty table). With a table name -> its columns and
@@ -365,22 +261,27 @@ def create_ucsf_omop_server(config: UCSFOMOPConfig) -> FastMCP:
         try:
             if not table:
                 if _schema_cache["tables"] is None:
-                    cols, rows, _, _ = _run("""
+                    cols, rows, _, _ = _run(f"""
                         SELECT t.name AS table_name, SUM(p.rows) AS row_count
                         FROM sys.tables t
                         JOIN sys.partitions p ON t.object_id=p.object_id AND p.index_id IN (0,1)
+                        WHERE t.schema_id = SCHEMA_ID('{config.schema_name.replace("'", "''")}')
                         GROUP BY t.name ORDER BY SUM(p.rows) DESC""", cap=None)
                     _schema_cache["tables"] = [{"table": r[0], "row_count": int(r[1])} for r in rows]
                 payload = {"database": config.database, "schema": config.schema_name,
                            "tables": _schema_cache["tables"]}
                 return ToolResult(content=[TextContent(type="text",
                     text=json.dumps(payload, indent=2))])
-            tname = table.split(".")[-1]
+            parts = table.split(".")
+            if len(parts) > 2 or (len(parts) == 2 and parts[0] != config.schema_name):
+                raise ToolError("Use a table in the configured OMOP schema.")
+            tname = parts[-1]
             if tname not in _schema_cache["cols"]:
                 cols, rows, _, _ = _run(f"""
                     SELECT COLUMN_NAME, DATA_TYPE, CHARACTER_MAXIMUM_LENGTH, IS_NULLABLE
                     FROM INFORMATION_SCHEMA.COLUMNS
-                    WHERE TABLE_NAME = '{tname.replace("'", "''")}'
+                    WHERE TABLE_SCHEMA = '{config.schema_name.replace("'", "''")}'
+                      AND TABLE_NAME = '{tname.replace("'", "''")}'
                     ORDER BY ORDINAL_POSITION""", cap=None)
                 _schema_cache["cols"][tname] = [
                     {"column": r[0], "type": r[1], "max_len": r[2], "nullable": r[3]} for r in rows]
@@ -393,8 +294,8 @@ def create_ucsf_omop_server(config: UCSFOMOPConfig) -> FastMCP:
         except ToolError:
             raise
         except Exception as e:
-            logger.error(f"schema error: {e}")
-            raise ToolError(f"Schema introspection error: {e}")
+            logger.error("Schema introspection failed (%s)", type(e).__name__)
+            raise ToolError("Schema introspection failed; check database access and metadata permissions.") from None
 
     # ---------------------------- concept search ----------------------------
     @mcp.tool(
@@ -417,13 +318,14 @@ def create_ucsf_omop_server(config: UCSFOMOPConfig) -> FastMCP:
         try:
             n = max(1, min(int(max_results), 50))
             raw = query.strip()
-            # Tokenized AND match: every word must appear, in any order, so
-            # "malignant breast cancer" matches "Malignant neoplasm of breast".
+            if not raw:
+                raise ToolError("Provide a nonempty clinical term or vocabulary code.")
+            # Tokens match literally; synonyms require a separate search.
             tokens = [t for t in re.split(r"\s+", raw) if t]
             name_match = " AND ".join(f"c.concept_name LIKE '%{_escape_like(t)}%'" for t in tokens) \
                 or f"c.concept_name LIKE '%{_escape_like(raw)}%'"
             code_match = f"c.concept_code = '{raw.replace(chr(39), chr(39)*2)}'"  # also match a raw code like '4548-4'
-            where = [f"(({name_match}) OR {code_match})"]
+            where = [f"(({name_match}) OR {code_match})", "c.invalid_reason IS NULL"]
             if standard_only:
                 where.append("c.standard_concept = 'S'")
             if domain:
@@ -460,118 +362,98 @@ def create_ucsf_omop_server(config: UCSFOMOPConfig) -> FastMCP:
                     "if descendant_count>0, join concept_ancestor to include subtypes.")
             return ToolResult(content=[TextContent(type="text",
                 text=json.dumps({"matches": out, "hint": note}, indent=2))])
+        except ToolError:
+            raise
         except Exception as e:
-            logger.error(f"concept search error: {e}")
-            raise ToolError(f"Concept search error: {e}")
+            logger.error("Concept search failed (%s)", type(e).__name__)
+            raise ToolError("Concept search failed; check database access or try a narrower term.") from None
 
     # ---------------------------- lab/vital finder ----------------------------
     @mcp.tool(
         name="find_measurement",
         annotations=ToolAnnotations(
-            title="Find Lab/Vital Measurement Concepts (with real data coverage)",
+            title="Find Lab/Vital Concepts (bounded samples by unit)",
             readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False))
     def find_measurement(
         name: str = Field(..., description="Lab or vital name, e.g. 'hemoglobin a1c', 'creatinine', 'LDL', 'systolic blood pressure'."),
         max_results: int = Field(default=8, description="Max concepts to profile (1-15)."),
     ) -> ToolResult:
-        """Resolve a lab/vital to the RIGHT measurement_concept_id(s) for querying
-        the `measurement` table, with real coverage stats: patient count, % of
-        rows that have a numeric value, and the value range.
+        """Find measurement concepts using bounded, nonrandom numeric samples.
 
-        Use this instead of search_concepts for anything measured in `measurement`.
-        It solves a common trap: the nominally-"standard" concept for a lab (often
-        a SNOMED concept) frequently has NO value_as_number, while the value-bearing
-        rows use a LOINC concept_id. This tool ranks by patient_count among concepts
-        that ACTUALLY appear in the measurement table, so you pick a usable
-        concept_id immediately. Then filter `measurement` DIRECTLY by that
-        concept_id (do NOT expand measurements through concept_ancestor)."""
+        Samples establish presence and units, not prevalence, exhaustive coverage,
+        or a representative value distribution. Exact profiling belongs in a job.
+        """
         try:
+            raw = name.strip()
+            if not raw:
+                raise ToolError("Provide a nonempty lab or vital name.")
             n = max(1, min(int(max_results), 15))
-            tokens = [t for t in re.split(r"\s+", name.strip()) if t]
-            name_match = " AND ".join(f"concept_name LIKE '%{_escape_like(t)}%'" for t in tokens) \
-                or f"concept_name LIKE '%{_escape_like(name.strip())}%'"
-            # candidate Measurement-domain concepts by name
-            cand_sql = f"""SELECT TOP 40 concept_id, concept_name, vocabulary_id, standard_concept
-                           FROM concept
-                           WHERE domain_id='Measurement' AND ({name_match})"""
-            cols, rows, _, _ = _run(cand_sql, cap=40)
+            tokens = re.split(r"\s+", raw)
+            name_match = " AND ".join(
+                f"concept_name LIKE '%{_escape_like(t)}%'" for t in tokens)
+            exact = raw.replace("'", "''")
+            candidate_sql = f"""
+                SELECT TOP {n} concept_id, concept_name, vocabulary_id, standard_concept
+                FROM concept
+                WHERE domain_id='Measurement' AND invalid_reason IS NULL AND ({name_match})
+                ORDER BY CASE WHEN concept_name = '{exact}' THEN 0 ELSE 1 END,
+                         CASE WHEN vocabulary_id='LOINC' THEN 0 ELSE 1 END,
+                         CASE WHEN standard_concept='S' THEN 0 ELSE 1 END,
+                         LEN(concept_name), concept_id"""
+            _, rows, _, _ = _run(candidate_sql, cap=n)
             if not rows:
                 return ToolResult(content=[TextContent(type="text", text=(
-                    f"No measurement concepts matched '{name}'. Try a simpler term "
-                    f"(e.g. 'a1c', 'creatinine') or use search_concepts."))])
-            cand = {r[0]: {"concept_id": r[0], "concept_name": r[1],
-                           "vocabulary_id": r[2], "standard_concept": r[3]} for r in rows}
-            ids = ",".join(str(i) for i in cand)
-            # one indexed pass over measurement for coverage on the candidates
-            cov_sql = f"""
-                SELECT measurement_concept_id,
-                       COUNT(*) AS rows_,
-                       COUNT(DISTINCT person_id) AS patients,
-                       SUM(CASE WHEN value_as_number IS NOT NULL THEN 1 ELSE 0 END) AS numeric_rows,
-                       MIN(value_as_number) AS min_val,
-                       MAX(value_as_number) AS max_val,
-                       AVG(value_as_number) AS avg_val
-                FROM measurement
-                WHERE measurement_concept_id IN ({ids})
-                GROUP BY measurement_concept_id"""
-            cols, rows, _, elapsed = _run(cov_sql, cap=None)
-            results = []
-            for r in rows:
-                c = cand.get(r[0], {})
-                rows_, pts, numr = int(r[1]), int(r[2]), int(r[3] or 0)
-                results.append({
-                    "concept_id": r[0], "concept_name": c.get("concept_name"),
-                    "vocabulary_id": c.get("vocabulary_id"),
-                    "standard_concept": c.get("standard_concept"),
-                    "patients": pts, "rows": rows_,
-                    "pct_numeric": round(100 * numr / rows_, 1) if rows_ else 0.0,
-                    "numeric_rows": numr,
-                    "value_min": None if r[4] is None else round(float(r[4]), 2),
-                    "value_max": None if r[5] is None else round(float(r[5]), 2),
-                    "value_avg": None if r[6] is None else round(float(r[6]), 2),
-                })
-            # value-bearing + high-patient concepts first
-            results.sort(key=lambda x: (x["pct_numeric"] > 0, x["patients"]), reverse=True)
-            if not results:
-                return ToolResult(content=[TextContent(type="text", text=(
-                    f"Concepts named like '{name}' exist but none appear in the "
-                    f"measurement table. Use search_concepts to inspect them."))])
-            # Decisive recommendation: the value-bearing concepts that together
-            # cover ~all numeric rows (drop negligible tails), as a ready IN-list.
-            valued = [r for r in results if r["numeric_rows"] > 0]
-            total_num = sum(r["numeric_rows"] for r in valued) or 1
-            recommended, acc = [], 0
-            for r in valued:
-                recommended.append(r["concept_id"])
-                acc += r["numeric_rows"]
-                if acc / total_num >= 0.99:  # enough concepts to cover the lab
-                    break
-            # dominant unit for the recommended concepts (one small grouped pass)
-            unit = None
-            if recommended:
-                try:
-                    ucols, urows, _, _ = _run(f"""
-                        SELECT TOP 1 u.concept_name, COUNT(*) AS n
-                        FROM measurement m JOIN concept u ON m.unit_concept_id=u.concept_id
-                        WHERE m.measurement_concept_id IN ({','.join(map(str, recommended))})
-                          AND m.value_as_number IS NOT NULL
-                        GROUP BY u.concept_name ORDER BY COUNT(*) DESC""", cap=1)
-                    unit = urows[0][0] if urows else None
-                except Exception:
-                    unit = None
-            note = (f"USE THESE: filter `measurement` with "
-                    f"`measurement_concept_id IN ({','.join(map(str, recommended))})` "
-                    f"and `value_as_number` (unit ≈ {unit}). Do NOT ancestor-expand "
-                    f"measurements and do NOT re-query the distribution — these "
-                    f"concepts already cover the lab's numeric rows.")
-            return ToolResult(content=[TextContent(type="text",
-                text=json.dumps({"recommended_concept_ids": recommended,
-                                 "dominant_unit": unit,
-                                 "measurements": results[:n], "hint": note,
-                                 "coverage_query_seconds": round(elapsed, 1)}, indent=2))])
+                    f"No measurement concepts matched '{name}'. Try a simpler term or synonym."))])
+            candidates = {int(r[0]): {"concept_id": int(r[0]), "concept_name": r[1],
+                                    "vocabulary_id": r[2], "standard_concept": r[3]}
+                          for r in rows}
+            ids = ','.join(map(str, candidates))
+            sample_sql = f"""
+                SELECT c.concept_id, s.unit_concept_id, COUNT_BIG(*) AS sampled_rows,
+                       MIN(s.value_as_number), MAX(s.value_as_number)
+                FROM concept c
+                CROSS APPLY (
+                    SELECT TOP 100 unit_concept_id, value_as_number
+                    FROM measurement m
+                    WHERE m.measurement_concept_id = c.concept_id
+                      AND m.value_as_number IS NOT NULL
+                ) s
+                WHERE c.concept_id IN ({ids})
+                GROUP BY c.concept_id, s.unit_concept_id"""
+            _, samples, _, elapsed = _run(sample_sql, cap=None)
+            for candidate in candidates.values():
+                candidate['numeric_samples_by_unit'] = []
+            for concept_id, unit_id, count, low, high in samples:
+                candidates[int(concept_id)]['numeric_samples_by_unit'].append({
+                    'unit_concept_id': unit_id, 'sampled_rows': int(count),
+                    'sample_min': None if low is None else float(low),
+                    'sample_max': None if high is None else float(high)})
+            profile_sql = f"""SELECT measurement_concept_id, unit_concept_id,
+                COUNT_BIG(*) AS numeric_rows, COUNT_BIG(DISTINCT person_id) AS patients,
+                MIN(value_as_number) AS minimum, MAX(value_as_number) AS maximum
+                FROM measurement WHERE measurement_concept_id IN ({ids})
+                AND value_as_number IS NOT NULL
+                GROUP BY measurement_concept_id, unit_concept_id"""
+            payload = {
+                'measurements': list(candidates.values()),
+                'recommended_concept_ids': [key for key, value in candidates.items()
+                                            if value['numeric_samples_by_unit']],
+                'sample_limit_per_concept': 100,
+                'sample_query_seconds': round(elapsed, 1),
+                'full_profile_query': profile_sql,
+                'hint': ('Candidate IDs require clinical review: name matches can describe different '
+                         'specimens or assays. Samples are nonrandom and neither exhaustive nor '
+                         'population estimates. Filter each threshold by unit_concept_id; never mix '
+                         'units. Submit full_profile_query with omop-submit_query_job for exact '
+                         'coverage, and monitor omop-query_job_status. A TOP limit does not '
+                         'guarantee cheap execution; if sampling times out, use a monitored job.')}
+            return ToolResult(content=[TextContent(type='text', text=json.dumps(payload, indent=2))])
+        except ToolError:
+            raise
         except Exception as e:
-            logger.error(f"find_measurement error: {e}")
-            raise ToolError(f"find_measurement error: {e}")
+            logger.error("Measurement discovery failed (%s)", type(e).__name__)
+            raise ToolError("Measurement discovery failed. Use search_concepts for vocabulary "
+                            "discovery and omop-submit_query_job for bounded, monitored profiling.") from None
 
     # ------------------ legacy list-tables (kept for back-compat) ------------------
     @mcp.tool(
@@ -583,6 +465,7 @@ def create_ucsf_omop_server(config: UCSFOMOPConfig) -> FastMCP:
         """List clinical data tables with row counts (prefer get_omop_schema)."""
         return get_omop_schema(table=None)
 
+    register_job_tools(mcp, "ucsfomopagent", config.model_dump(), prefix="omop-")
     return mcp
 
 
@@ -602,7 +485,6 @@ def main(
     config = UCSFOMOPConfig(username=username, password=password, log_level=log_level)
     logger.info("Starting UCSFOMOPAgent - UCSF OMOP Clinical Database MCP Server")
     logger.info(f"OMOP Server: {config.server}  Database: {config.database}")
-    logger.info(f"Username: {config.username}")
 
     mcp = create_ucsf_omop_server(config)
     mcp.run()

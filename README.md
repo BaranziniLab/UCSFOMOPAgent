@@ -1,5 +1,60 @@
 # UCSFOMOPAgent
 
+Current version: **0.3.0**. Small queries stay on MCP; long queries and full
+exports run as monitored local jobs without tying up an MCP request.
+
+## Install in BioRouter
+
+1. Download **[ucsfomopagent.brxt](https://github.com/BaranziniLab/UCSFOMOPAgent/releases/latest/download/ucsfomopagent.brxt)**
+   from [Releases](https://github.com/BaranziniLab/UCSFOMOPAgent/releases/latest).
+   The same current bundle is committed under [extensions/](extensions/).
+2. In BioRouter, open **Extensions → Add extension**, select the BRXT and install.
+   BioRouter creates the Python environment; `uv` and Python 3.11+ are required.
+3. Enter credentials in BioRouter's own configuration dialog, never in chat.
+4. Enable the extension in your chat. Verify a small query before a larger export.
+
+Terminal installation uses the same installer:
+
+```bash
+biorouter extension install ./extensions/ucsfomopagent.brxt
+biorouter extension configure ucsfomopagent
+```
+
+Configure `CLINICAL_RECORDS_USERNAME` and `CLINICAL_RECORDS_PASSWORD`. Host defaults to the UCSF SQL Server; database defaults to `OMOP_DEID`. Optional `CLINICAL_RECORDS_SERVER` / `CLINICAL_RECORDS_DATABASE` overrides are declared in the manifest. UCSF network/VPN access and database read permission are required.
+
+The Desktop installer discovers bundled `skills/*/SKILL.md`. If using a BioRouter
+CLI version that does not copy bundled skills, the MCP server still provides the
+job-routing instructions; the skill folders can also be installed separately.
+
+## Long queries, CLI and progress
+
+Use `omop-submit_query_job` for an export or a query that could exceed the
+interactive timeout. It returns a job ID immediately. Poll
+`omop-query_job_status` at its recommended interval; use
+`omop-cancel_query_job` to stop. Only `completed` means the file is complete.
+Status includes rows, bytes, elapsed time, phase and an advisory ETA when known.
+Set `mode="explain"` to obtain a plan without running the query.
+
+From a source checkout, or BioRouter's installed extension directory:
+
+```bash
+uv sync --locked
+# Standalone CLI only: configure its OS-keyring profile interactively once.
+# BioRouter MCP jobs already receive credentials and do not need this command.
+uv run ucsfomopagent auth
+uv run ucsfomopagent submit --query-file query.sql --format jsonl --timeout-seconds 3600
+uv run ucsfomopagent watch JOB_ID
+```
+
+No-argument `uv run ucsfomopagent` continues to start the MCP server. `status`, `watch`,
+`list`, `cancel` and `purge` need no database credentials. Results remain in the
+local private job directory and are not sent to chat. Database/server limits can
+still fail a query; jobs report those failures instead of silently truncating.
+
+See [architecture, storage, security and release details](docs/QUERY_JOBS.md).
+To rebuild the tracked bundle: `uv run python scripts/build_brxt.py`.
+
+
 An MCP (Model Context Protocol) server for querying the **UCSF OMOP** de-identified
 electronic health records database (OMOP CDM v5.4 on Microsoft SQL Server) for
 fast, robust clinical data retrieval.
@@ -9,55 +64,19 @@ fast, robust clinical data retrieval.
 > [`benchmark/CHANGELOG.md`](benchmark/CHANGELOG.md) for the full engineering log
 > and [`benchmark/`](benchmark/) for the reproducible evaluation harness.
 
-## BioRouter Extension
 
-**[Download ucsfomopagent.brxt](https://github.com/BaranziniLab/UCSFOMOPAgent/releases/latest/download/ucsfomopagent.brxt)**
+## Database-specific behavior
 
-Drag the `.brxt` file into BioRouter's **Extensions → Add extension** dialog.
-BioRouter installs the virtual environment automatically and prompts for
-credentials.
+The server supplies T-SQL and OMOP conventions, cached live schema discovery,
+concept resolution and a lab/vital finder. `find_measurement` now examines bounded
+numeric samples per candidate and unit. These are nonrandom samples, not complete
+coverage counts or population estimates. It returns a full profiling query for a
+monitored job when exact statistics are needed. Never mix units without an
+explicit conversion plan. Live schema takes precedence over historical counts.
 
-| Variable | Required | Default | Description |
-|----------|----------|---------|-------------|
-| `CLINICAL_RECORDS_USERNAME` | ✅ | — | UCSF network username |
-| `CLINICAL_RECORDS_PASSWORD` | ✅ | — | UCSF network password |
-| `OMOP_LOG_LEVEL` | optional | `INFO` | Logging level |
-| `OMOP_SCHEMA` | optional | `omop` | Default DB schema for OMOP tables |
-| `CLINICAL_RECORDS_SERVER` | optional | (UCSF default) | Override DB host (migration) |
-| `CLINICAL_RECORDS_DATABASE` | optional | `OMOP_DEID` | Override DB name (migration) |
-
-## What's new in v0.2.0
-
-The original agent exposed a raw SQL pipe and a table-lister with **no** context,
-so the LLM rediscovered the SQL dialect, schema, OMOP conventions, and vocabulary
-by trial and error every session — burning tokens and iterations, and sometimes
-landing on wrong concepts. v0.2.0 fixes this entirely inside the extension:
-
-### Injected context (surfaced into the agent's system prompt)
-The server now ships a rich `instructions` block covering: the Microsoft SQL
-Server dialect (`TOP` not `LIMIT`, window/median syntax), the `omop` default
-schema, OMOP CDM essentials (the `*_concept_id` → `concept` join, `concept_ancestor`
-for disease/drug-class cohorts, `drug_era` for ingredient exposure,
-`COUNT(DISTINCT person_id)` for cohorts), demographic concept_ids with the high
-"Unknown" rates flagged, the (very large) `measurement` rule (always filter by
-concept_id), de-identification date-shift caveats, and the list of empty
-tables/columns to never query.
-
-### Tools (2 → 5)
-| Tool | Purpose |
-|------|---------|
-| `query_ucsf_omop` | Read-only T-SQL query. Now reuses a pooled connection, caps result rows, tolerates leading comments, and returns **self-healing** error hints (e.g. `LIMIT`→`TOP`, unknown table/column → "check `get_omop_schema`"). |
-| `search_concepts` | Resolve a clinical term to ranked OMOP `concept_id`s. **Tokenized** matching ("malignant breast cancer" → "Malignant neoplasm of breast"), `concept_code` lookup, and `descendant_count` for hierarchy expansion. |
-| `find_measurement` | Lab/vital finder. Returns `recommended_concept_ids` (the value-bearing LOINC concepts that cover the lab, ready for `IN(...)`), the dominant unit, patient counts, and value ranges — in one call. Solves the "standard concept has no value" trap. |
-| `get_omop_schema` | Live schema introspection: tables + row counts (no args) or a table's columns. Read live → robust to UCSF schema drift. |
-| `list_ucsf_omop_tables` | Back-compat alias of `get_omop_schema`. |
-
-### Speed & robustness
-- One pooled DB connection reused across calls (health-checked, auto-reconnect),
-  instead of connect-per-query.
-- Schema/column introspection cached in-process; large result sets capped.
-- Server/database/schema overridable by env (migration-safe); live introspection
-  rather than hardcoded structure.
+Interactive queries use a serialized reusable connection, autocommit, a short
+preview timeout, valid CSV quoting and result caps. Full exports use independent
+job connections and do not inherit preview caps. Failed connections are discarded.
 
 ## Features
 
@@ -75,15 +94,6 @@ tables/columns to never query.
 uvx --from git+https://github.com/BaranziniLab/UCSFOMOPAgent ucsfomopagent
 ```
 
-### Build the `.brxt`
-
-```bash
-zip -r ../ucsfomopagent.brxt manifest.json README.md pyproject.toml src/ skills/ \
-  -x '*/__pycache__/*' '*.pyc'
-```
-
-(Exclude `.venv/`, `__pycache__/`, and the `benchmark/` directory — the bundle
-needs only `manifest.json`, `README.md`, `pyproject.toml`, `src/`, and `skills/`.)
 
 ## Evaluation
 
@@ -97,6 +107,7 @@ public); the methodology, relative improvements, and efficiency metrics
 
 ## Security
 
-All queries are validated read-only (SELECT/WITH only; no DML/DDL; no stacked
-statements). Credentials are provided via environment variables (stored in the OS
+User SQL must parse as one read-only SELECT/WITH query, and unsafe operations
+are rejected. Use a database account restricted to SELECT; validation supplements
+server permissions. Credentials are provided via environment variables (stored in the OS
 keyring by BioRouter) and are never logged or committed.

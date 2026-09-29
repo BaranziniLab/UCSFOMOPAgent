@@ -4,4 +4,10 @@ __pycache__/
 .creds_cache.json
 benchmark/harness/.creds_cache.json
 *.brxt
-uv.lock
+
+.env
+.env.*
+!.env.example
+*.partial
+
+!extensions/*.brxt
