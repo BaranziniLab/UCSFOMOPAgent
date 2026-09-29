@@ -39,6 +39,34 @@ Use for OMOP phenotypes, standardized clinical concepts, or patient cohorts.
    shifts dates per patient; validate date ranges. Age from birth year is approximate.
    Report unmapped concepts and Unknown demographic shares when relevant.
 
+## Large fact-table studies
+
+Require staged extraction before a full study across large event tables. Freeze a
+private study manifest: database/schema, extraction start time, resolved concept
+IDs and descendant lists, inclusion/exclusion rules, temporal windows and boundary
+conventions, index-date selection, units, missing-data rules, censoring, output
+grain and query-template version or hash.
+
+Compute the minimal seed cohort once and save distinct identifiers privately. If
+eligibility depends on later facts, freeze a candidate superset and apply the
+remaining rules after extracting those facts. The seed count is not necessarily
+the eligible population. Avoid repeating the complete eligibility CTE graph in
+each domain query or batch.
+
+Extract required domains using disjoint identifier batches with selective concept
+and date predicates. Pilot a small batch before scaling. Bind parameters through
+private local parameter files; respect SQL Server's parameter limit including
+other predicates. Keep identifiers and patient data out of chat. Reduce batch
+size or change an equivalent execution plan when needed; never silently remove a
+phenotype rule, narrow follow-up, or discard costly patients to finish sooner.
+
+Reconcile every planned batch, including completed batches with zero matching
+rows. Apply cross-domain eligibility and temporal relationships using the frozen
+definition. Preserve event identifiers and distinguish events from distinct
+patients. A frozen manifest is not a database snapshot: separate connections can
+observe changes during extraction. Record any explicitly authorized change to
+phenotype semantics as a new manifest version.
+
 Credentials are injected by BioRouter or retrieved through the CLI credential
 profile. Never request secrets in tool arguments or print credentials. Follow the
 `ucsfomopagent-query-jobs` skill for CLI monitoring and export budgets. Neither MCP

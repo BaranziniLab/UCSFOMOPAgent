@@ -1,6 +1,6 @@
 # UCSFOMOPAgent
 
-Current version: **0.3.1**. Small queries stay on MCP; long queries and full
+Current version: **0.3.2**. Small queries stay on MCP; long queries and full
 exports run as monitored local jobs without tying up an MCP request.
 
 ## Install in BioRouter
@@ -50,6 +50,21 @@ No-argument `uv run ucsfomopagent` continues to start the MCP server. `status`, 
 `list`, `cancel` and `purge` need no database credentials. Results remain in the
 local private job directory and are not sent to chat. Database/server limits can
 still fail a query; jobs report those failures instead of silently truncating.
+
+### Large fact-table studies
+
+Background jobs avoid MCP request timeouts, but expensive database plans can
+still take too long. For large OMOP studies, freeze a minimal seed cohort or
+candidate superset, then extract required facts in bounded, parameterized batches.
+Replace repeated eligibility CTEs across large fact tables with staged extraction
+that preserves the complete clinical definition.
+
+Keep identifiers, parameter files, outputs and the batch manifest private and
+local. Pilot batches, monitor at most two concurrent jobs, and reconcile all
+required outputs before applying final eligibility rules or reporting completion.
+A heartbeat is not query progress; zero streamed rows is not an empty cohort.
+ETA is provisional, and separate connections do not provide a shared database
+snapshot. The bundled phenotype and query-job skills describe the full workflow.
 
 See [architecture, storage, security and release details](docs/QUERY_JOBS.md).
 To rebuild the tracked bundle: `uv run python scripts/build_brxt.py`.

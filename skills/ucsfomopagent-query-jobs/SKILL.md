@@ -30,6 +30,28 @@ BioRouter. Never ask the user to paste credentials into chat or shell arguments.
    automatic retry, keyset checkpoint, or safe general-purpose query resume.
    Use `omop-cancel_query_job` for unwanted work, then poll to terminal state.
 
+## Staged extraction and monitoring
+
+For large fact-table studies, freeze the seed cohort and clinical definition as
+described in `omop-phenotype-query`. Maintain a private batch manifest with the
+cohort/query version, domain, disjoint batch membership, job ID, status, output
+path, row count and file checksum. This is an explicit local workflow; the job
+service does not automatically schedule, checkpoint or resume a study. Keep at
+most two jobs active. Do not substitute OFFSET pagination for stable membership.
+
+Set a pilot observation budget before scaling. If execution produces no rows
+beyond that budget, inspect the plan or cancel and redesign; confirm terminal
+status before replacement. A healthy heartbeat alone does not justify extending
+the timeout. Zero rows streamed by a running job does not mean an empty result.
+
+Report completed batches separately from extracted rows and eligible patients.
+Estimate remaining wall time only from comparable completed batches, accounting
+for concurrency and variability, and label it provisional. Do not infer total
+rows from the first batch. Retry only failed or incomplete batches, retain prior
+complete outputs and record which attempt is authoritative to avoid double-counting.
+Declare the study complete only when every required batch is reconciled and the
+frozen eligibility checks pass. Never relax clinical filters merely for speed.
+
 CLI status needs no credentials: from the installed extension directory, run
 `uv run ucsfomopagent status JOB_ID` or `uv run ucsfomopagent watch JOB_ID`.
 A user running standalone CLI submissions can configure its separate OS-keyring

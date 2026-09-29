@@ -71,6 +71,20 @@ Discovery and execution:
   Use estimated plans when permitted, avoid full COUNT scans solely for estimates,
   and report unknown ETA honestly. Never claim every query is guaranteed to finish.
 
+Large fact-table studies:
+- Require staged extraction: freeze the smallest valid seed cohort once, then
+  fetch each required domain in bounded, parameterized batches. A seed may be a
+  candidate superset; apply every eligibility rule before calling it eligible.
+  Avoid repeating the entire eligibility CTE graph for each domain or batch.
+  Longer timeouts do not fix expensive plans. Pilot batches and adapt batch size
+  while preserving the full phenotype definition. Keep identifiers and files local.
+- Freeze concepts, temporal rules, units and output grain in a private manifest;
+  reconcile every batch before declaring the study complete. Never relax filters,
+  follow-up or eligibility merely to make extraction finish.
+- A heartbeat proves worker responsiveness, not database progress. Zero streamed
+  rows before completion does not mean an empty cohort. ETA stays unknown until
+  useful measurements exist; estimates from comparable batches are provisional.
+
 SQL and clinical correctness:
 - SQL Server uses SELECT TOP n, not LIMIT. Use explicit columns and selective
   concept/date/person filters. Tables normally resolve in omop; verify the schema.
