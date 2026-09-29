@@ -8,13 +8,18 @@ import logging
 import os
 from typing import Optional
 
-from ucsfomopagent.server import main as server_main
 
 
 logger = logging.getLogger("UCSFOMOPAgent")
 
 
 def main() -> None:
+    import sys
+    if len(sys.argv) > 1:
+        from .query_cli import main as query_main
+        raise SystemExit(query_main())
+    from ucsfomopagent.server import main as server_main
+
     """
     Main entry point for the UCSFOMOPAgent CLI.
 

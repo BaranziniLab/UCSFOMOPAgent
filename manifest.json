@@ -2,10 +2,10 @@
   "name": "ucsfomopagent",
   "display_name": "UCSFOMOPAgent",
   "description": "Read-only MCP access to the UCSF OMOP de-identified EHR database, with OMOP/T-SQL context injection and concept/schema/lab-finder tools for fast, robust clinical data retrieval.",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "entry_point": "ucsfomopagent",
   "repository": "https://github.com/BaranziniLab/UCSFOMOPAgent",
-  "tools_count": 5,
+  "tools_count": 8,
   "env_vars": [
     {
       "key": "CLINICAL_RECORDS_USERNAME",
@@ -36,6 +36,32 @@
       "default": "omop",
       "description": "Default DB schema for OMOP tables",
       "secret": false
+    },
+    {
+      "key": "CLINICAL_RECORDS_SERVER",
+      "required": false,
+      "auto_propagate": false,
+      "default": "QCDIDDWDB001.ucsfmedicalcenter.org",
+      "description": "Database connection setting",
+      "secret": false
+    },
+    {
+      "key": "CLINICAL_RECORDS_DATABASE",
+      "required": false,
+      "auto_propagate": false,
+      "default": "OMOP_DEID",
+      "description": "Database connection setting",
+      "secret": false
+    }
+  ],
+  "skills": [
+    {
+      "name": "ucsfomopagent-query-jobs",
+      "description": "Plan and monitor read-only background database exports without MCP timeouts."
+    },
+    {
+      "name": "omop-phenotype-query",
+      "description": "Resolve OMOP concepts and construct clinical phenotype queries."
     }
   ]
 }

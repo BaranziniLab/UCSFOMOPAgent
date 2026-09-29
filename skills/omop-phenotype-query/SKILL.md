@@ -1,38 +1,42 @@
 ---
 name: omop-phenotype-query
-description: Query the UCSF OMOP CDM to identify patient phenotypes and clinical concepts, fast and robustly, using the agent's concept/schema/lab tools.
+description: Define and query UCSF OMOP phenotypes using vocabulary discovery, unit-aware lab samples, and monitored jobs for expensive queries and exports.
 ---
 
-Use this skill when the user wants to define or query patient phenotypes using
-the OMOP Common Data Model at UCSF.
+Use for OMOP phenotypes, standardized clinical concepts, or patient cohorts.
 
-## When to activate
-- User asks about OMOP, phenotypes, standard concepts, or the OHDSI framework
-- User wants to count patients with conditions/drugs/labs using standard vocabularies
+1. Inspect `get_omop_schema` for current tables and columns. Table row counts are
+   approximate metadata, not exact cohort sizes. Never assume historical empty
+   tables or population counts remain current.
+2. Resolve conditions, drugs and procedures with `search_concepts`. Search words
+   are literal, not semantic synonyms. For ATC classes set `standard_only=false`.
+   Use `concept_ancestor` for disease/drug-class descendants; count distinct patients
+   or use EXISTS to avoid multiplying event rows. `drug_era` is ingredient-level.
+3. Discover labs with `find_measurement`. It samples up to 100 numeric rows per
+   candidate concept and groups samples by unit. Samples are nonrandom, not
+   prevalence estimates or exhaustive coverage. Review specimen and assay before
+   using `recommended_concept_ids`; a name match does not imply equivalence.
+   Thresholds must include `unit_concept_id`, or explicitly convert compatible
+   units. Coded results require `value_as_concept_id` instead of numeric thresholds.
+4. Use `query_ucsf_omop` for inexpensive bounded previews. SQL Server uses `TOP`,
+   not `LIMIT`. Select explicit columns and filter by concepts, dates and patients.
+   CTEs do not force materialization, and TOP does not guarantee a cheap query.
+5. Use `omop-submit_query_job` for full exports, costly aggregates, previous
+   timeouts or uncertain query costs. For exact numeric lab coverage submit the
+   discovery tool's `full_profile_query`. Consider `mode="explain"` first if cost
+   is uncertain and SHOWPLAN permission exists. Avoid an expensive exact count
+   solely to estimate cost. Reuse known estimates, clearly labelled as estimates.
+6. Poll `omop-query_job_status` at `recommended_poll_seconds`. Report phase,
+   elapsed time, rows and bytes; ETA may be unknown until rows stream. Submit
+   once, avoid duplicate queries, and do not consider a partial file complete.
+   Only `completed` supplies a complete export. Process it locally, showing
+   summaries in chat. On failure inspect the cause and revise before retrying;
+   cancel unwanted work with `omop-cancel_query_job` and monitor terminal status.
+7. State concepts, units, cohort filters, reference date and assumptions. De-ID
+   shifts dates per patient; validate date ranges. Age from birth year is approximate.
+   Report unmapped concepts and Unknown demographic shares when relevant.
 
-## Fast, reliable workflow (use the dedicated tools — don't guess)
-1. **Resolve concepts first.**
-   - Diseases / drugs / procedures → `search_concepts("type 2 diabetes", domain="Condition")`.
-   - Labs / vitals (the `measurement` table) → `find_measurement("hemoglobin a1c")`,
-     and use its `recommended_concept_ids` verbatim.
-2. **Build the cohort with hierarchy expansion.** For a disease or drug class,
-   join `concept_ancestor` from the standard concept to include all subtypes:
-   `JOIN concept_ancestor ca ON x.concept_id = ca.descendant_concept_id
-    WHERE ca.ancestor_concept_id = <standard concept_id>`. Count patients with
-   `COUNT(DISTINCT person_id)`.
-3. **Run with `query_ucsf_omop`** (Microsoft SQL Server / T-SQL: use `TOP`, not
-   `LIMIT`). Use `get_omop_schema` if unsure of a table's columns.
-4. **Present results** with the concept_ids used and any assumptions, and offer
-   broader/narrower definitions via concept ancestors.
-
-## Notes
-- OMOP uses standard concept IDs — avoid local source_value codes and never
-  LIKE-scan source_value on the big event tables.
-- Filter `measurement` DIRECTLY by measurement_concept_id; never ancestor-expand
-  measurements. The nominally-standard lab concept often has no value — trust
-  `find_measurement`.
-- For "cohort with lab > threshold", use a CTE for the cohort, then filter
-  measurement — avoid 4-table joins on the 1.24B-row measurement table.
-- All queries are read-only on de-identified data. concept_id = 0 is unmapped —
-  filter it out for clean phenotypes. Race/ethnicity are heavily "Unknown";
-  report that share.
+Credentials are injected by BioRouter or retrieved through the CLI credential
+profile. Never request secrets in tool arguments or print credentials. Follow the
+`ucsfomopagent-query-jobs` skill for CLI monitoring and export budgets. Neither MCP
+nor background jobs guarantee that arbitrary queries can finish within resource limits.
