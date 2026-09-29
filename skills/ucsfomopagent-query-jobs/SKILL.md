@@ -35,3 +35,18 @@ CLI status needs no credentials: from the installed extension directory, run
 A user running standalone CLI submissions can configure its separate OS-keyring
 profile once with `uv run ucsfomopagent auth`; BioRouter submissions already use its own
 credential store and do not require that step. Never dump either credential store.
+
+In BioRouter's JavaScript code tool, use namespace access for hyphenated MCP names:
+
+```javascript
+import * as omop from "ucsfomopagent";
+const status = omop["omop-query_job_status"]({job_id: "JOB_ID"});
+record_result(status);
+```
+
+A hyphenated name is not a JavaScript identifier and cannot appear in a named
+import. Pass only fields declared by the tool schema; remove local bookkeeping
+keys from argument objects. Keep file writes and database calls in small separate
+batches so one failing discovery call does not discard all prior results. Each
+query must be one read-only SELECT/CTE; use VALUES in a CTE rather than DECLARE,
+INSERT, temporary tables, or multiple statements.

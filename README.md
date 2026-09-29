@@ -1,6 +1,6 @@
 # UCSFOMOPAgent
 
-Current version: **0.3.0**. Small queries stay on MCP; long queries and full
+Current version: **0.3.1**. Small queries stay on MCP; long queries and full
 exports run as monitored local jobs without tying up an MCP request.
 
 ## Install in BioRouter

@@ -1,5 +1,5 @@
 """UCSFOMOPAgent database connector."""
-__version__ = "0.3.0"
+__version__ = "0.3.1"
 __all__ = ['create_ucsf_omop_server', 'main', 'UCSFOMOPConfig', '__version__']
 
 

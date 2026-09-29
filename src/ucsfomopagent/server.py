@@ -420,9 +420,19 @@ def create_ucsf_omop_server(config: UCSFOMOPConfig) -> FastMCP:
                 ) s
                 WHERE c.concept_id IN ({ids})
                 GROUP BY c.concept_id, s.unit_concept_id"""
-            _, samples, _, elapsed = _run(sample_sql, cap=None)
+            sample_status = 'completed'
+            sample_error = None
+            try:
+                _, samples, _, elapsed = _run(sample_sql, cap=None)
+            except Exception as error:
+                # Vocabulary discovery is still useful when a sparse lab sample stalls.
+                samples, elapsed = [], None
+                sample_status = 'unavailable'
+                sample_error = ('Numeric sampling failed (' + type(error).__name__ +
+                                '); presence and units are unknown. Submit sample_query as a '
+                                'monitored job instead of repeating this synchronous lookup.')
             for candidate in candidates.values():
-                candidate['numeric_samples_by_unit'] = []
+                candidate['numeric_samples_by_unit'] = [] if sample_status == 'completed' else None
             for concept_id, unit_id, count, low, high in samples:
                 candidates[int(concept_id)]['numeric_samples_by_unit'].append({
                     'unit_concept_id': unit_id, 'sampled_rows': int(count),
@@ -439,7 +449,10 @@ def create_ucsf_omop_server(config: UCSFOMOPConfig) -> FastMCP:
                 'recommended_concept_ids': [key for key, value in candidates.items()
                                             if value['numeric_samples_by_unit']],
                 'sample_limit_per_concept': 100,
-                'sample_query_seconds': round(elapsed, 1),
+                'sample_query_seconds': None if elapsed is None else round(elapsed, 1),
+                'sample_status': sample_status,
+                'sample_error': sample_error,
+                'sample_query': sample_sql,
                 'full_profile_query': profile_sql,
                 'hint': ('Candidate IDs require clinical review: name matches can describe different '
                          'specimens or assays. Samples are nonrandom and neither exhaustive nor '

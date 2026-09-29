@@ -18,6 +18,8 @@ class Cursor:
         if self.connection.fail_next:
             self.connection.fail_next = False
             raise RuntimeError("secret-driver-payload")
+        if 'CROSS APPLY' in sql and self.connection.fail_sample:
+            raise TimeoutError('secret-driver-payload')
         self.sql = sql
         self.connection.statements.append(sql)
 
@@ -41,6 +43,7 @@ class Connection:
     def __init__(self):
         self.statements = []
         self.fail_next = False
+        self.fail_sample = False
         self.closed = False
 
     def cursor(self):
@@ -75,6 +78,22 @@ class OMOPReviewTests(unittest.TestCase):
             self.assertIn('CROSS APPLY', queries)
             self.assertNotIn('COUNT_BIG(DISTINCT', queries)
             self.assertNotIn('AVG(', queries)
+        self.run_client(check)
+
+    def test_sample_timeout_preserves_vocabulary_and_routes_to_job(self):
+        async def check(client, connection):
+            connection.fail_sample = True
+            response = await client.call_tool('find_measurement', {'name': 'a1c'})
+            result = json.loads(response.content[0].text)
+            self.assertEqual(result['sample_status'], 'unavailable')
+            self.assertEqual(result['measurements'][0]['concept_id'], 3004410)
+            self.assertIsNone(result['measurements'][0]['numeric_samples_by_unit'])
+            self.assertIsNone(result['sample_query_seconds'])
+            self.assertEqual(result['recommended_concept_ids'], [])
+            self.assertIn('TOP 100', result['sample_query'])
+            self.assertIn('unknown', result['sample_error'])
+            self.assertNotIn('secret-driver-payload', response.content[0].text)
+            self.assertTrue(connection.closed)
         self.run_client(check)
 
     def test_empty_searches_do_not_touch_database(self):

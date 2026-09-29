@@ -16,6 +16,9 @@ Use for OMOP phenotypes, standardized clinical concepts, or patient cohorts.
    candidate concept and groups samples by unit. Samples are nonrandom, not
    prevalence estimates or exhaustive coverage. Review specimen and assay before
    using `recommended_concept_ids`; a name match does not imply equivalence.
+   If `sample_status` is `unavailable`, vocabulary candidates remain valid but
+   measurement presence and units are unknown, not absent. Submit `sample_query`
+   as a monitored job; do not repeat the same synchronous sampling call.
    Thresholds must include `unit_concept_id`, or explicitly convert compatible
    units. Coded results require `value_as_concept_id` instead of numeric thresholds.
 4. Use `query_ucsf_omop` for inexpensive bounded previews. SQL Server uses `TOP`,

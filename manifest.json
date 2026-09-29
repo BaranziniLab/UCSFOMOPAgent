@@ -2,7 +2,7 @@
   "name": "ucsfomopagent",
   "display_name": "UCSFOMOPAgent",
   "description": "Read-only MCP access to the UCSF OMOP de-identified EHR database, with OMOP/T-SQL context injection and concept/schema/lab-finder tools for fast, robust clinical data retrieval.",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "entry_point": "ucsfomopagent",
   "repository": "https://github.com/BaranziniLab/UCSFOMOPAgent",
   "tools_count": 8,
