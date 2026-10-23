@@ -15,20 +15,36 @@ BioRouter. Never ask the user to paste credentials into chat or shell arguments.
 2. If cost is uncertain, submit `mode="explain"` first and inspect the completed
    local plan. It does not execute the query. SQL Server SHOWPLAN may require
    additional permission; lack of a plan is not evidence of a cheap query.
-3. Submit the query once. Set an explicit timeout budget (default 3600 seconds,
-   maximum 86400) and a disk budget (`max_bytes`, default 10 GB). Do not run more
-   than two simultaneous jobs per connector. Add `expected_rows` only if already
-   known or reasonably estimated, and tell the user it is an estimate.
-4. Poll `omop-query_job_status` using its `recommended_poll_seconds` (5–60).
-   Status is immediate and contains phase, elapsed time, rows, bytes and heartbeat.
-   Report unknown ETA honestly during blocking execution. Historical-query and
-   streaming-rate estimates are advisory; changing load invalidates them.
-5. Only `completed` supplies a complete `result_path`. Process CSV/JSONL locally;
-   send summaries to chat. Exports do not silently apply an MCP preview row cap.
-6. On `failed`, `timed_out` or `interrupted`, inspect the cause and revise the plan
-   before a new submission. Partial files are not complete datasets. There is no
-   automatic retry, keyset checkpoint, or safe general-purpose query resume.
-   Use `omop-cancel_query_job` for unwanted work, then poll to terminal state.
+3. Call `omop-query_job_capacity` before admission. It reports `active_jobs`,
+   `max_active_jobs` (2) and `available_slots`. Submit once with an explicit timeout
+   budget (default 3600 seconds, maximum 86400) and disk budget (`max_bytes`,
+   default 10 GB). Capacity is checked atomically again on submission; a
+   `capacity_exceeded` rejection includes current capacity. Wait for a slot or
+   cancel unwanted work, rather than retrying admission in a tight loop. Supply
+   `expected_rows` only when already known or estimated, and label it provisional.
+4. Call `omop-wait_for_query_job` with the job ID and `timeout_seconds` from
+   0 to 30. This is native bounded waiting; it does not require a shell sleep.
+   `wait_timed_out=true` means the wait ended with the job still active, not that
+   the job failed. Cancelling a wait leaves the job running. For an immediate
+   snapshot, use `omop-query_job_status`; if polling, respect its
+   `recommended_poll_seconds` (5–60). Report phase, elapsed time, rows and bytes;
+   unknown ETA during blocking execution is normal. Estimates are advisory.
+5. Only `completed` means the export is complete. Use
+   `omop-read_query_job_result` with `job_id`, byte `offset` (initially 0) and
+   `max_bytes` (4–65536). Follow `next_offset` until `eof=true`; offsets are bytes,
+   not rows, and CSV records may span chunks. Do not send `result_path` to generic
+   filesystem tools or request a wider filesystem permission. Keep patient-level
+   exports local and return appropriate summaries. Large local analyses can use
+   the CLI file; the MCP reader requires POSIX secure-open support and refuses
+   unsupported platforms. Exports do not silently apply a preview row cap.
+6. On `failed`, `timed_out` or `interrupted`, inspect sanitized `error_details`
+   (`code`, `kind`, `message`, `phase`, `retryable`) and revise the plan before a
+   new submission. A successful status lookup can report a failed job. The MCP
+   `_meta['io.biorouter/operation']` envelope describes that operation outcome
+   separately from lookup success. Partial files are incomplete; there is no
+   automatic retry, keyset checkpoint or general-purpose resume. `retryable` is
+   advisory and never triggers resubmission. Use `omop-cancel_query_job` for
+   unwanted work, then wait for a terminal state before replacing it.
 
 ## Staged extraction and monitoring
 

@@ -8,7 +8,7 @@ import sys
 import threading
 import time
 
-from .jobs import JobStore, ACTIVE
+from .jobs import JobStore, ACTIVE, failure_details, record_failure
 
 
 def execute(store, job_id, payload, stream):
@@ -23,7 +23,7 @@ def execute(store, job_id, payload, stream):
         return data
     partial = directory / ('result.' + request['format'] + '.partial')
     final = directory / ('result.' + request['format'])
-    progress = {'phase': 'connecting', 'rows': 0, 'bytes': 0}
+    progress = {'phase': 'opening_output', 'rows': 0, 'bytes': 0}
     done = threading.Event()
     failure = []
 
@@ -35,6 +35,7 @@ def execute(store, job_id, payload, stream):
                 writer = csv.writer(csv_buffer) if request['format'] == 'csv' else None
                 header = False
                 def write_row(row):
+                    progress['phase'] = 'writing_output'
                     if writer:
                         csv_buffer.seek(0); csv_buffer.truncate(0)
                         writer.writerow([json.dumps(v, default=str, ensure_ascii=False) if isinstance(v, (dict, list)) else v for v in row])
@@ -45,6 +46,7 @@ def execute(store, job_id, payload, stream):
                         raise OverflowError('output budget')
                     out.write(encoded)
                     progress['bytes'] += len(encoded)
+                progress['phase'] = 'connecting'
                 for columns, batch in stream(request, payload['credentials'], progress):
                     progress.setdefault('stream_started_at', time.time())
                     progress['phase'] = 'streaming'
@@ -55,18 +57,11 @@ def execute(store, job_id, payload, stream):
                         write_row(row if writer else dict(zip(columns, row)))
                         progress['rows'] += 1
                     out.flush()
+                progress['phase'] = 'finalizing'
                 out.flush()
                 os.fsync(out.fileno())
         except Exception as error:
-            name = type(error).__name__
-            if isinstance(error, OverflowError):
-                failure.append('Output byte budget exceeded; narrow the export or explicitly raise max_bytes.')
-            elif 'Auth' in name:
-                failure.append('Database authentication failed. Reconfigure credentials through the trusted UI or CLI.')
-            elif 'Timeout' in name:
-                failure.append('Database timeout. Inspect the plan and filters before explicitly resubmitting.')
-            else:
-                failure.append('Database or output operation failed (' + name + '). Check credentials, connectivity, schema, permissions and disk space; raw errors are withheld to protect data.')
+            failure.append(failure_details(error, progress['phase']))
         finally:
             done.set()
 
@@ -77,14 +72,17 @@ def execute(store, job_id, payload, stream):
         if (directory / 'cancel').exists():
             data.update(state='cancelled', phase='cancelled')
         elif time.monotonic() - started >= request['timeout_seconds']:
-            data.update(state='timed_out', phase='timed_out', error='Job wall-clock budget expired. Inspect the plan before explicitly resubmitting with a larger budget.')
+            record_failure(data, dict(code='job_deadline_exceeded', kind='timeout', message='Job wall-clock budget expired. Inspect the plan before explicitly resubmitting with a larger budget.', phase=progress['phase'], retryable=False), state='timed_out')
         elif done.is_set():
             data.update(progress)
             if failure:
-                data.update(state='failed', phase='failed', error=failure[0])
+                record_failure(data, failure[0])
             else:
-                partial.replace(final)
-                data.update(state='completed', phase='completed', result_path=str(final), bytes=final.stat().st_size)
+                try:
+                    partial.replace(final)
+                    data.update(state='completed', phase='completed', result_path=str(final), bytes=final.stat().st_size)
+                except Exception as error:
+                    record_failure(data, failure_details(error, 'finalizing'))
         if data['state'] != 'running':
             data['finished_at'] = time.time()
         if not store.update(data):
@@ -107,7 +105,7 @@ def main():
         execute(store, job_id, payload, backend.stream)
     except Exception:
         data = store.status(job_id)
-        data.update(state='failed', phase='failed', error='Worker initialization failed.', finished_at=time.time())
+        record_failure(data, dict(code='worker_initialization_failed', kind='internal', message='Worker initialization failed.', phase='worker_initialization', retryable=False))
         store.update(data)
     # Keep the OS lease until exit kills the driver thread too. Releasing it while
     # a blocked thread can still write would let purge race against an active file.

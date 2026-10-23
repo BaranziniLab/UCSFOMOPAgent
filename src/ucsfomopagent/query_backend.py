@@ -1,6 +1,8 @@
 """Streaming SQL Server adapter; each background job owns its connection."""
 import os
 
+from .jobs import JobError
+
 DIALECT = 'sql'
 SECRET_KEYS = ('CLINICAL_RECORDS_USERNAME', 'CLINICAL_RECORDS_PASSWORD')
 ENV_KEYS = ('CLINICAL_RECORDS_USERNAME', 'CLINICAL_RECORDS_PASSWORD', 'CLINICAL_RECORDS_SERVER', 'CLINICAL_RECORDS_DATABASE')
@@ -14,7 +16,7 @@ def from_environment(env=None):
 
 def check_credentials(values):
     if not values.get('username') or not values.get('password'):
-        raise ValueError('Configure CLINICAL_RECORDS_USERNAME and CLINICAL_RECORDS_PASSWORD through BioRouter or the interactive auth command.')
+        raise JobError('credentials_missing', 'permission_denied', 'Configure database credentials through BioRouter or the interactive auth command.', 'credentials')
 
 
 def stream(request, credentials, progress):
@@ -22,17 +24,18 @@ def stream(request, credentials, progress):
     check_credentials(credentials)
     with pymssql.connect(server=credentials['server'], database=credentials['database'], user=credentials['username'], password=credentials['password'], timeout=request['timeout_seconds'], login_timeout=20, autocommit=True, appname=__package__ + '-query-job') as conn:
         with conn.cursor() as cursor:
+            progress['phase'] = 'planning' if request['mode'] == 'explain' else 'executing'
             if request['mode'] == 'explain':
                 cursor.execute('SET SHOWPLAN_XML ON')
-            progress['phase'] = 'planning' if request['mode'] == 'explain' else 'executing'
             cursor.execute(request['query'], request['parameters'] or None)
             columns = [c[0] for c in cursor.description] if cursor.description else []
             if len(columns) != len(set(columns)):
-                raise ValueError('Duplicate column names: alias each projection.')
+                raise JobError('duplicate_columns', 'invalid_args', 'Duplicate column names: alias each projection.', 'executing')
             while True:
+                progress['phase'] = 'streaming'
                 rows = cursor.fetchmany(1000)
                 yield columns, rows
                 if not rows:
                     break
             if cursor.nextset():
-                raise ValueError("Multiple result sets are not supported; submit one SELECT per job.")
+                raise JobError('multiple_result_sets', 'invalid_args', 'Multiple result sets are not supported; submit one SELECT per job.', 'streaming')

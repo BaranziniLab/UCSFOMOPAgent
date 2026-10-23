@@ -17,11 +17,11 @@ class MCPTests(unittest.TestCase):
             server = importlib.import_module(PACKAGE + '.server')
             if PACKAGE == 'ucsfomopagent':
                 mcp = server.create_ucsf_omop_server(server.UCSFOMOPConfig(username='test',password='test'))
-                prefix, count = 'omop-', 8
+                prefix, count = 'omop-', 11
             elif PACKAGE == 'cdwagent':
                 from cdwagent.config import CDWConfig, ClinicalDBConfig
                 mcp = server.create_cdw_server(CDWConfig(clinical_db=ClinicalDBConfig(username='test',password='test')))
-                prefix, count = 'CDW-', 25
+                prefix, count = 'CDW-', 28
             else:
                 mcp = server.create_spoke_server(server.SPOKEConfig(uri='bolt://localhost:7687',username='test',password='test',database='neo4j'))
                 prefix, count = 'spoke-', 8
@@ -29,7 +29,7 @@ class MCPTests(unittest.TestCase):
                 tools = await client.list_tools()
                 names = {t.name for t in tools}
                 self.assertEqual(len(names), count, names)
-                self.assertTrue({prefix+n for n in ['submit_query_job','query_job_status','cancel_query_job']} <= names)
+                self.assertTrue({prefix+n for n in ['submit_query_job','query_job_capacity','query_job_status','wait_for_query_job','read_query_job_result','cancel_query_job']} <= names)
                 submit = next(t for t in tools if t.name == prefix+'submit_query_job')
                 self.assertNotIn('credentials', submit.input_schema['properties'])
                 query = 'SELECT 1 AS value' if PACKAGE != 'spokeagent' else 'RETURN 1 AS value'

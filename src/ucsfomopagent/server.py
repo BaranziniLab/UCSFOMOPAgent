@@ -67,7 +67,7 @@ Discovery and execution:
 - query_ucsf_omop is for small previews and inexpensive queries, with a short timeout
   and capped output. A TOP bound limits returned rows, not database computation.
   For slow aggregates, large exports, uncertain costs or timeouts, use
-  omop-submit_query_job once, then omop-query_job_status at recommended intervals.
+  omop-submit_query_job once, then use omop-wait_for_query_job or status at recommended intervals.
   Use estimated plans when permitted, avoid full COUNT scans solely for estimates,
   and report unknown ETA honestly. Never claim every query is guaranteed to finish.
 
@@ -246,7 +246,7 @@ def create_ucsf_omop_server(config: UCSFOMOPConfig) -> FastMCP:
             raise
         except Exception as e:
             msg = str(e)
-            hint = " Use omop-submit_query_job for slow queries or full exports; monitor omop-query_job_status."
+            hint = " Use omop-submit_query_job for slow queries or full exports; use omop-wait_for_query_job."
             if re.search(r"LIMIT", msg, re.IGNORECASE):
                 hint = " HINT: use `TOP n` instead of `LIMIT` (SQL Server)."
             elif "Invalid object name" in msg:
@@ -472,7 +472,7 @@ def create_ucsf_omop_server(config: UCSFOMOPConfig) -> FastMCP:
                          'specimens or assays. Samples are nonrandom and neither exhaustive nor '
                          'population estimates. Filter each threshold by unit_concept_id; never mix '
                          'units. Submit full_profile_query with omop-submit_query_job for exact '
-                         'coverage, and monitor omop-query_job_status. A TOP limit does not '
+                         'coverage, and use omop-wait_for_query_job. A TOP limit does not '
                          'guarantee cheap execution; if sampling times out, use a monitored job.')}
             return ToolResult(content=[TextContent(type='text', text=json.dumps(payload, indent=2))])
         except ToolError:

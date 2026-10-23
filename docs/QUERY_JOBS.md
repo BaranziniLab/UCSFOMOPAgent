@@ -13,8 +13,9 @@ Keep each connector independently installable and releasable. Database adapters
 live in query_backend.py, orchestration in jobs.py/job_worker.py, and command
 parsing in query_cli.py. Existing domain tools remain alongside them. This avoids
 a new separately published dependency or any requirement to clone sibling repos.
-The three small job-runtime modules intentionally have identical source; when
-changing the protocol, run the same contract tests in all three repositories.
+OMOP and CDW keep jobs.py and job_worker.py identical. Their query adapters differ
+only in connector defaults. Run the same contract tests in both repositories when
+changing the protocol; the SPOKE connector has an independently released runtime.
 A future shared package is appropriate once its API and release ownership settle.
 
 `extensions/ucsfomopagent.brxt` is the current committed installable artifact. Build it
@@ -78,6 +79,78 @@ uv run ucsfomopagent status JOB_ID
 uv run ucsfomopagent cancel JOB_ID
 uv run ucsfomopagent purge JOB_ID
 ```
+
+## MCP waiting, capacity and result handoff
+
+Six namespace-prefixed job tools are available. `submit_query_job` starts work;
+`query_job_status` is an immediate lookup; `cancel_query_job` requests cancellation.
+`query_job_capacity` reports `active_jobs`, `max_active_jobs` (2), and
+`available_slots`. Admission is checked atomically, so a later submission can
+still return `capacity_exceeded` with current capacity. Waiting jobs hold their
+slot until completion, failure or confirmed cancellation.
+
+`wait_for_query_job(job_id, timeout_seconds=30)` waits natively for 0–30 seconds.
+It returns a current status plus `wait_timed_out`; true means the wait budget ended
+while the job remains active. Cancelling the MCP wait does not cancel the job.
+Use another bounded wait or respect `recommended_poll_seconds` for immediate
+status polls. Status lookups run off the MCP event loop with a short database
+lock budget. If the wait expires while storage is busy after an active state
+was observed, it returns that last state with `wait_timed_out=true`,
+`wait_status_stale=true` and an explicit warning. If no state could be read,
+it returns a transient `status_lookup_busy` lookup error without claiming an
+operation outcome. A busy lookup never marks the job failed. No shell sleep,
+fabricated progress or automatic resubmission is needed. Unknown ETA is normal
+during connection, planning and execution.
+
+`read_query_job_result(job_id, offset=0, max_bytes=8192)` reads only a completed
+job's managed CSV/JSONL file. It accepts no path. It returns `text`, byte
+`offset`, `bytes_read`, `total_bytes`, `eof` and `next_offset`. Limits are 4–65536
+bytes per call; follow `next_offset` until `eof=true`. Chunk boundaries preserve
+UTF-8 characters but can split rows or quoted CSV records. Assemble the desired
+bounded content before parsing it. A mid-character offset is rejected.
+
+The reader ignores saved `result_path` values and opens a fixed result name
+relative to the managed job directory, using pinned-root identity, descriptor-
+relative opens and no-follow flags. It rejects directory/file symlinks, hardlinks,
+nonregular files and changed result sizes. POSIX secure-open primitives are
+required. On unsupported platforms (including Windows) it fails closed with
+`secure_reader_unavailable`; the existing local CLI result remains available.
+This does not grant arbitrary filesystem access or isolate hostile code running
+under the same OS account. Keep controlled data local and use bounded summaries
+rather than placing complete patient-level exports in chat.
+
+Failed jobs retain `error_details` with stable `code`, `kind`, sanitized `message`,
+original failure `phase`, and boolean `retryable`. Driver messages and query
+literals are not exposed. Retryability is advisory; resubmission remains explicit.
+New submissions, status/wait responses and cancellation responses also carry:
+
+```json
+{"_meta":{"io.biorouter/operation":{"version":1,"id":"ucsfomopagent:JOB_ID","status":"failed","error":{"code":"query_rejected","kind":"invalid_args","message":"The database rejected the query. Check schema, projections and parameters.","phase":"executing","retryable":false}}}}
+```
+
+Allowed operation states are `queued`, `running`, `completed`, `failed` and
+`cancelled`; job `timed_out` and `interrupted` map to operation `failed`. A status
+lookup that finds a failed job still has MCP `isError=false`. Unknown-job,
+admission and result-reader failures have `isError=true` and structured safe
+errors, without changing the stored job outcome. Older failed records without
+structured details receive a generic safe operation error.
+
+## Credential-free app smoke fixture
+
+From a source checkout, create a fresh empty absolute directory and run:
+
+```bash
+uv run python scripts/synthetic_job_server.py --root /absolute/fresh-empty-dir --delay-seconds 2
+```
+
+This stdio MCP server registers the actual six job tools with an isolated store.
+It accepts only `SELECT 1 AS example` (three synthetic multilingual rows),
+`SELECT 0 AS simulate_failure` (stable safe failure), and
+`SELECT 2 AS simulate_slow` (bounded delayed success). No real database connection,
+credential lookup or installed job store is used. An existing nonempty directory
+is refused. Use `omop-submit_query_job`, wait/status, and the result reader to
+exercise real MCP metadata and chunked handoff in a development app. Use separate
+fresh roots for concurrent fixtures.
 
 ## Read-only and failure boundaries
 
