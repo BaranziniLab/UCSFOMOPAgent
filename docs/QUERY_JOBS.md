@@ -13,8 +13,9 @@ Keep each connector independently installable and releasable. Database adapters
 live in query_backend.py, orchestration in jobs.py/job_worker.py, and command
 parsing in query_cli.py. Existing domain tools remain alongside them. This avoids
 a new separately published dependency or any requirement to clone sibling repos.
-The three small job-runtime modules intentionally have identical source; when
-changing the protocol, run the same contract tests in all three repositories.
+OMOP and CDW keep jobs.py and job_worker.py identical. Their query adapters differ
+only in connector defaults. Run the same contract tests in both repositories when
+changing the protocol; the SPOKE connector has an independently released runtime.
 A future shared package is appropriate once its API and release ownership settle.
 
 `extensions/ucsfomopagent.brxt` is the current committed installable artifact. Build it
@@ -46,8 +47,15 @@ malicious code running under the same OS account.
 ## Storage and progress
 
 Jobs live in `~/.local/share/ucsf-agents/ucsfomopagent/` (override the parent using
-UCSF_AGENT_JOB_ROOT). Directories are private (0700) and DB/results are 0600 on
-POSIX. On Windows use the account's private profile directory and its ACLs.
+UCSF_AGENT_JOB_ROOT). The storage backend checks current-account ownership,
+rejects symlinks, nonregular entries and hard-linked private files, and repairs
+existing owned stores before reading them. On macOS/Linux it uses retained
+no-follow descriptors, modes 0700/0600 and removal of inherited ACL grants.
+New result files are protected before any result bytes are written. Windows uses
+a protected current-user DACL through retained no-reparse handles. Unsupported
+or unsafe storage returns an actionable `private_storage_unavailable` error from
+the job tools; synchronous connector tools remain available. Normal job use
+requires no additional prompts or changes to the six-tool interface.
 SQLite serializes admission (two active jobs per connector). Results stream in
 1000-row batches to a `.partial` file and are renamed only after success and
 fsync. The default disk budget is 10 GB; exceeding it fails visibly rather than
@@ -55,6 +63,30 @@ silently truncating the dataset. JSONL preserves nulls; CSV encodes null as empt
 and JSON-encodes graph/list values. Use JSONL when empty string and null must be
 distinguished. SQL projections require unique column aliases. Exported text may
 contain spreadsheet formula strings: treat it as data when importing CSV.
+
+These permissions protect against other ordinary local accounts where filesystem
+ACLs are enforced; they do not revoke file handles another process opened before
+an old store was repaired. They do not isolate arbitrary code running under the
+same OS account, administrators or root. Choose storage beneath a private or
+administrator-controlled parent directory. SQLite and process-lease/final-rename
+operations still use pathnames after identity checks; this update does not claim
+to eliminate every pathname replacement race in the complete job runtime.
+
+On Windows, automatic repair first checks every managed directory for mutation
+rights granted to another ordinary account. A writable known child remains
+accessible to that account even when its parent is private, so a protected parent
+alone does not make legacy migration safe. Such stores return
+`private_storage_requires_quiescent_repair` before changing existing ACLs. Unknown
+ACL formats receive the same conservative refusal. Already-private stores and
+legacy read-only inheritance continue through normal automatic repair.
+
+For this refusal, stop the connector and other writers and ask an administrator
+to repair only the owned ordinary entries without following links, verify that
+other ordinary accounts cannot mutate any managed directory, and retry. Another
+option is a fresh private `UCSF_AGENT_JOB_ROOT`, retaining the old store untouched
+for trusted recovery. Moving an old directory alone does not repair its existing
+ACLs. The connector does not delete old data or silently migrate an actively
+shared store. Ordinary job use needs no additional approval prompts.
 
 Status records queued/running/terminal states and separate connecting/planning/
 executing/streaming phases,
@@ -78,6 +110,78 @@ uv run ucsfomopagent status JOB_ID
 uv run ucsfomopagent cancel JOB_ID
 uv run ucsfomopagent purge JOB_ID
 ```
+
+## MCP waiting, capacity and result handoff
+
+Six namespace-prefixed job tools are available. `submit_query_job` starts work;
+`query_job_status` is an immediate lookup; `cancel_query_job` requests cancellation.
+`query_job_capacity` reports `active_jobs`, `max_active_jobs` (2), and
+`available_slots`. Admission is checked atomically, so a later submission can
+still return `capacity_exceeded` with current capacity. Waiting jobs hold their
+slot until completion, failure or confirmed cancellation.
+
+`wait_for_query_job(job_id, timeout_seconds=30)` waits natively for 0–30 seconds.
+It returns a current status plus `wait_timed_out`; true means the wait budget ended
+while the job remains active. Cancelling the MCP wait does not cancel the job.
+Use another bounded wait or respect `recommended_poll_seconds` for immediate
+status polls. Status lookups run off the MCP event loop with a short database
+lock budget. If the wait expires while storage is busy after an active state
+was observed, it returns that last state with `wait_timed_out=true`,
+`wait_status_stale=true` and an explicit warning. If no state could be read,
+it returns a transient `status_lookup_busy` lookup error without claiming an
+operation outcome. A busy lookup never marks the job failed. No shell sleep,
+fabricated progress or automatic resubmission is needed. Unknown ETA is normal
+during connection, planning and execution.
+
+`read_query_job_result(job_id, offset=0, max_bytes=8192)` reads only a completed
+job's managed CSV/JSONL file. It accepts no path. It returns `text`, byte
+`offset`, `bytes_read`, `total_bytes`, `eof` and `next_offset`. Limits are 4–65536
+bytes per call; follow `next_offset` until `eof=true`. Chunk boundaries preserve
+UTF-8 characters but can split rows or quoted CSV records. Assemble the desired
+bounded content before parsing it. A mid-character offset is rejected.
+
+The reader ignores saved `result_path` values and opens a fixed result name
+relative to the managed job directory, using pinned-root identity, descriptor-
+relative opens and no-follow flags. It rejects directory/file symlinks, hardlinks,
+nonregular files and changed result sizes. POSIX secure-open primitives are
+required. On unsupported platforms (including Windows) it fails closed with
+`secure_reader_unavailable`; the existing local CLI result remains available.
+This does not grant arbitrary filesystem access or isolate hostile code running
+under the same OS account. Keep controlled data local and use bounded summaries
+rather than placing complete patient-level exports in chat.
+
+Failed jobs retain `error_details` with stable `code`, `kind`, sanitized `message`,
+original failure `phase`, and boolean `retryable`. Driver messages and query
+literals are not exposed. Retryability is advisory; resubmission remains explicit.
+New submissions, status/wait responses and cancellation responses also carry:
+
+```json
+{"_meta":{"io.biorouter/operation":{"version":1,"id":"ucsfomopagent:JOB_ID","status":"failed","error":{"code":"query_rejected","kind":"invalid_args","message":"The database rejected the query. Check schema, projections and parameters.","phase":"executing","retryable":false}}}}
+```
+
+Allowed operation states are `queued`, `running`, `completed`, `failed` and
+`cancelled`; job `timed_out` and `interrupted` map to operation `failed`. A status
+lookup that finds a failed job still has MCP `isError=false`. Unknown-job,
+admission and result-reader failures have `isError=true` and structured safe
+errors, without changing the stored job outcome. Older failed records without
+structured details receive a generic safe operation error.
+
+## Credential-free app smoke fixture
+
+From a source checkout, create a fresh empty absolute directory and run:
+
+```bash
+uv run python scripts/synthetic_job_server.py --root /absolute/fresh-empty-dir --delay-seconds 2
+```
+
+This stdio MCP server registers the actual six job tools with an isolated store.
+It accepts only `SELECT 1 AS example` (three synthetic multilingual rows),
+`SELECT 0 AS simulate_failure` (stable safe failure), and
+`SELECT 2 AS simulate_slow` (bounded delayed success). No real database connection,
+credential lookup or installed job store is used. An existing nonempty directory
+is refused. Use `omop-submit_query_job`, wait/status, and the result reader to
+exercise real MCP metadata and chunked handoff in a development app. Use separate
+fresh roots for concurrent fixtures.
 
 ## Read-only and failure boundaries
 
@@ -130,3 +234,17 @@ Security updates remove the former Intel-macOS cryptography<49 constraint.
 Patched cryptography 50+ is required. If a compatible Intel macOS wheel is not
 available, install the upstream Rust/OpenSSL build prerequisites or use a
 supported Python/platform combination; do not restore a vulnerable version cap.
+
+## Submission and CLI follow-up semantics
+
+Capacity responses and rejection context include `advisory: true`: another client
+may consume an available slot before submission. Atomic admission remains the
+authority. Once a job ID has been allocated, a local worker-start or pipe failure
+returns that durable ID with failed operation metadata; it does not hide the job
+behind a generic submission error. No active slot remains allocated to that failure.
+
+CLI `watch JOB_ID` uses the same native bounded wait as MCP instead of a separate
+sleep/poll loop. The wait remains at most 30 seconds per call and can be repeated
+until terminal. `status JOB_ID` remains an immediate lookup. Terminal payload
+`phase` is the terminal state, while `error_details.phase` identifies where the
+failure actually occurred (for example `executing` or `worker_start`).
