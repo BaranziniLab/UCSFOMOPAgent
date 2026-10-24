@@ -72,6 +72,22 @@ administrator-controlled parent directory. SQLite and process-lease/final-rename
 operations still use pathnames after identity checks; this update does not claim
 to eliminate every pathname replacement race in the complete job runtime.
 
+On Windows, automatic repair first checks every managed directory for mutation
+rights granted to another ordinary account. A writable known child remains
+accessible to that account even when its parent is private, so a protected parent
+alone does not make legacy migration safe. Such stores return
+`private_storage_requires_quiescent_repair` before changing existing ACLs. Unknown
+ACL formats receive the same conservative refusal. Already-private stores and
+legacy read-only inheritance continue through normal automatic repair.
+
+For this refusal, stop the connector and other writers and ask an administrator
+to repair only the owned ordinary entries without following links, verify that
+other ordinary accounts cannot mutate any managed directory, and retry. Another
+option is a fresh private `UCSF_AGENT_JOB_ROOT`, retaining the old store untouched
+for trusted recovery. Moving an old directory alone does not repair its existing
+ACLs. The connector does not delete old data or silently migrate an actively
+shared store. Ordinary job use needs no additional approval prompts.
+
 Status records queued/running/terminal states and separate connecting/planning/
 executing/streaming phases,
 rows written, bytes, heartbeat, elapsed time and advisory ETA. A heartbeat proves

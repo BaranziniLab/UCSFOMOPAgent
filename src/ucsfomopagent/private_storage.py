@@ -186,6 +186,8 @@ def private_storage_call(action):
     try:
         return action()
     except (OSError, ValueError) as error:
+        if isinstance(error, PrivateStorageError):
+            raise
         if isinstance(error, OSError) and error.errno == errno.ENOSPC:
             raise PrivateStorageError(
                 'Local job storage is full. Free space before explicitly resubmitting.',

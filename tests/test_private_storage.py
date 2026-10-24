@@ -158,6 +158,19 @@ class PrivateStorageTests(unittest.TestCase):
 
 
 class StorageFailureToolTests(unittest.TestCase):
+    def test_specific_safe_recovery_refusal_survives_the_storage_wrapper(self):
+        refusal = storage.PrivateStorageError(
+            'Stop writers and have an administrator safely repair this owned legacy store.',
+            code='private_storage_requires_quiescent_repair',
+        )
+        def refuse():
+            raise refusal
+        with self.assertRaises(storage.PrivateStorageError) as caught:
+            storage.private_storage_call(refuse)
+        self.assertIs(caught.exception, refusal)
+        self.assertEqual(jobs.failure_details(caught.exception, 'storage')['code'],
+                         'private_storage_requires_quiescent_repair')
+
     def test_full_disk_keeps_actionable_storage_category(self):
         def full():
             raise OSError(errno.ENOSPC, 'private-path-marker')
