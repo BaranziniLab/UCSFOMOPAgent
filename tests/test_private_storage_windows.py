@@ -1,5 +1,7 @@
 """Real NTFS/Windows ACL checks, with synthetic data and no database access."""
 import importlib
+from contextlib import contextmanager
+import ctypes
 import json
 import os
 from pathlib import Path
@@ -54,7 +56,7 @@ class WindowsPrivateStorageTests(unittest.TestCase):
                 ConvertTo-Json -Depth 5 -Compress
         """, path))
 
-    def broad_acl(self, path):
+    def broad_acl(self, path, *, mutation=False):
         self.powershell("""
             $item=Get-Item -Force -LiteralPath $env:PRIVATE_STORAGE_TEST_PATH;
             $acl=if ($item.PSIsContainer) {[Security.AccessControl.DirectorySecurity]::new()}
@@ -66,14 +68,17 @@ class WindowsPrivateStorageTests(unittest.TestCase):
                 [Security.AccessControl.InheritanceFlags]::ObjectInherit
             } else {[Security.AccessControl.InheritanceFlags]::None};
             foreach ($identity in @($sid,[Security.Principal.SecurityIdentifier]::new('S-1-1-0'))) {
+                $rights=if ($identity.Equals($sid) -or MUTATION_FIXTURE) {
+                    [Security.AccessControl.FileSystemRights]::FullControl
+                } else {[Security.AccessControl.FileSystemRights]::ReadAndExecute};
                 $rule=[Security.AccessControl.FileSystemAccessRule]::new(
-                    $identity,[Security.AccessControl.FileSystemRights]::FullControl,
+                    $identity,$rights,
                     $inheritance,[Security.AccessControl.PropagationFlags]::None,
                     [Security.AccessControl.AccessControlType]::Allow);
                 $acl.AddAccessRule($rule)
             };
             Set-Acl -LiteralPath $env:PRIVATE_STORAGE_TEST_PATH -AclObject $acl
-        """, path)
+        """.replace('MUTATION_FIXTURE', '$true' if mutation else '$false'), path)
 
     def assert_private(self, path, directory, *, token_owner=False):
         acl = self.acl(path)
@@ -181,6 +186,82 @@ class WindowsPrivateStorageTests(unittest.TestCase):
         finally:
             self.windows._close(handle)
         self.assertEqual(self.acl(path)['sddl'], before['sddl'])
+
+    def test_nonadministrator_default_owner_cannot_authorize_acl_changes(self):
+        canary = self.base / 'owner-canary.txt'
+        canary.write_bytes(b'unchanged owner canary')
+        self.broad_acl(canary)
+        before = self.acl(canary)['sddl']
+        context = self.windows._Security()
+        self.addCleanup(context.close)
+        ordinary_group = context._sid('S-1-5-32-545')
+        context.owner_sid = ordinary_group
+        self.assertFalse(context._owner_allowed(ordinary_group))
+        actual_security_info = self.windows._security_info
+
+        @contextmanager
+        def group_owned(handle):
+            with actual_security_info(handle) as (owner, dacl, descriptor):
+                yield ordinary_group, dacl, descriptor
+
+        handle = self.windows._open(canary, False)
+        try:
+            with patch.object(self.windows, '_security_info', group_owned), self.assertRaisesRegex(ValueError, 'owned'):
+                context.protect(handle, False)
+        finally:
+            self.windows._close(handle)
+        self.assertEqual(self.acl(canary)['sddl'], before)
+        self.assertEqual(canary.read_bytes(), b'unchanged owner canary')
+
+    def test_foreign_writable_nested_directory_refuses_before_propagation(self):
+        outside_parent = self.base / 'outside'
+        outside_parent.mkdir()
+        self.broad_acl(outside_parent)
+        outside = outside_parent / 'unprotected-canary.txt'
+        outside.write_bytes(b'outside propagation canary')
+        self.assertFalse(self.acl(outside)['protected'])
+        legacy = self.base / 'legacy'
+        nested = legacy / 'nested'
+        nested.mkdir(parents=True)
+        self.broad_acl(legacy)
+        self.broad_acl(nested, mutation=True)
+        before = {entry: self.acl(entry)['sddl'] for entry in (legacy, nested, outside)}
+        attempts = []
+        original = self.windows._Security.protect
+
+        def insert_at_first_directory_repair(context, handle, directory):
+            attempts.append(directory)
+            if directory and not (nested / 'injected-hardlink').exists():
+                os.link(outside, nested / 'injected-hardlink')
+            return original(context, handle, directory)
+
+        error = importlib.import_module(PACKAGE + '.private_storage').PrivateStorageError
+        with patch.object(self.windows._Security, 'protect', insert_at_first_directory_repair):
+            with self.assertRaises(error) as refused:
+                self.windows.PrivateDirectory(legacy)
+        self.assertEqual(refused.exception.code, 'private_storage_requires_quiescent_repair')
+        self.assertIn('Stop all processes', str(refused.exception))
+        self.assertEqual(attempts, [])
+        self.assertEqual({entry: self.acl(entry)['sddl'] for entry in before}, before)
+        self.assertEqual(outside.read_bytes(), b'outside propagation canary')
+        self.assertFalse((nested / 'injected-hardlink').exists())
+
+    def test_unknown_directory_ace_refuses_before_repair(self):
+        path = self.base / 'private'
+        with self.windows.PrivateDirectory(path) as root:
+            before = self.acl(path)['sddl']
+            unknown = ctypes.create_string_buffer(32)
+            ctypes.cast(unknown, ctypes.POINTER(self.windows._AceHeader)).contents.kind = 9
+            address = ctypes.addressof(unknown)
+
+            def unknown_ace(dacl, index, destination):
+                ctypes.cast(destination, ctypes.POINTER(ctypes.c_void_p)).contents.value = address
+                return True
+
+            error = importlib.import_module(PACKAGE + '.private_storage').PrivateStorageError
+            with patch.object(self.windows._security, 'GetAce', unknown_ace), self.assertRaises(error):
+                root._security.preflight_directory(root._handle)
+            self.assertEqual(self.acl(path)['sddl'], before)
 
     def test_retained_directory_prevents_replacement_and_names_are_plain(self):
         path = self.base / 'private'

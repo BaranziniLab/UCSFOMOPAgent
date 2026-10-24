@@ -33,6 +33,8 @@ _DACL_INFO = 4
 _PROTECTED_DACL_INFO = 0x80000000
 _DACL_PROTECTED = 0x1000
 _FILE_ALL_ACCESS = 0x001F01FF
+_MUTATION_RIGHTS = 0x510D0156
+_KNOWN_FILE_RIGHTS = _FILE_ALL_ACCESS | 0xF1000000
 
 
 class _SecurityAttributes(ctypes.Structure):
@@ -89,6 +91,8 @@ _security.GetTokenInformation.argtypes = [wintypes.HANDLE, ctypes.c_int, _POINTE
 _security.GetTokenInformation.restype = wintypes.BOOL
 _security.ConvertSidToStringSidW.argtypes = [_POINTER, ctypes.POINTER(_POINTER)]
 _security.ConvertSidToStringSidW.restype = wintypes.BOOL
+_security.ConvertStringSidToSidW.argtypes = [wintypes.LPCWSTR, ctypes.POINTER(_POINTER)]
+_security.ConvertStringSidToSidW.restype = wintypes.BOOL
 _security.ConvertStringSecurityDescriptorToSecurityDescriptorW.argtypes = [
     wintypes.LPCWSTR, wintypes.DWORD, ctypes.POINTER(_POINTER), ctypes.POINTER(wintypes.DWORD)]
 _security.ConvertStringSecurityDescriptorToSecurityDescriptorW.restype = wintypes.BOOL
@@ -108,6 +112,8 @@ _security.SetSecurityInfo.argtypes = [wintypes.HANDLE, ctypes.c_int, wintypes.DW
 _security.SetSecurityInfo.restype = wintypes.DWORD
 _security.IsValidSid.argtypes = [_POINTER]
 _security.IsValidSid.restype = wintypes.BOOL
+_security.GetLengthSid.argtypes = [_POINTER]
+_security.GetLengthSid.restype = wintypes.DWORD
 _security.EqualSid.argtypes = [_POINTER, _POINTER]
 _security.EqualSid.restype = wintypes.BOOL
 _security.GetAce.argtypes = [_POINTER, wintypes.DWORD, ctypes.POINTER(_POINTER)]
@@ -193,6 +199,7 @@ def _security_info(handle):
 class _Security:
     def __init__(self):
         self._descriptors = []
+        self._owned_sids = []
         token = wintypes.HANDLE()
         if not _security.OpenProcessToken(_kernel.GetCurrentProcess(), 8, ctypes.byref(token)):
             raise _error()
@@ -225,11 +232,30 @@ class _Security:
         finally:
             _kernel.LocalFree(string)
         try:
+            self.system_sid = self._sid('S-1-5-18')
+            self.administrators_sid = self._sid('S-1-5-32-544')
             self.directory = self._descriptor('OICI')
             self.file = self._descriptor('')
         except BaseException:
             self.close()
             raise
+
+    def _sid(self, text):
+        sid = _POINTER()
+        if not _security.ConvertStringSidToSidW(text, ctypes.byref(sid)):
+            raise _error()
+        self._owned_sids.append(sid)
+        if not _security.IsValidSid(sid):
+            raise ValueError('A well-known Windows security SID is invalid.')
+        return sid
+
+    def _owner_allowed(self, owner):
+        if _security.EqualSid(owner, self.sid):
+            return True
+        return bool(_security.EqualSid(owner, self.owner_sid) and any(
+            _security.EqualSid(self.owner_sid, privileged)
+            for privileged in (self.system_sid, self.administrators_sid)
+        ))
 
     def _descriptor(self, inheritance):
         descriptor = _POINTER()
@@ -254,13 +280,56 @@ class _Security:
             raise ValueError('Private job storage requires ordinary files and directories without reparse points or hard links.')
         if owner:
             with _security_info(handle) as (actual_owner, unused, descriptor):
-                # Elevated Windows tokens can assign their default owner to
-                # SQLite journals. Accept only that exact token SID, not groups
-                # in general; the protected DACL still grants only TokenUser.
+                # Elevated tokens give SQLite journals an administrator owner.
+                # A non-admin group owner would give other ordinary members
+                # implicit WRITE_DAC even after an owner-only DACL repair.
                 if (not actual_owner or not _security.IsValidSid(actual_owner)
-                        or not any(_security.EqualSid(actual_owner, sid) for sid in (self.sid, self.owner_sid))):
-                    raise ValueError('Private job storage must be owned by the Windows account or its process default owner.')
+                        or not self._owner_allowed(actual_owner)):
+                    raise ValueError('Private job storage must be owned by the Windows account or its exact administrator process default owner.')
         return _identity(information)
+
+    @staticmethod
+    def _unsafe_legacy_directory():
+        from .private_storage import PrivateStorageError
+        return PrivateStorageError(
+            'Existing Windows job storage is writable by another ordinary account, '
+            'or its ACL cannot be safely inspected. Stop all processes using the store, '
+            'move it to an account-owned local directory and have its owner or administrator '
+            'remove other accounts\' write/delete/change-permission access throughout the tree '
+            'before retrying. Automatic ACL repair was refused; no existing ACL was changed.',
+            code='private_storage_requires_quiescent_repair', kind='permission_denied',
+        )
+
+    def preflight_directory(self, handle):
+        self.validate(handle, True)
+        with _security_info(handle) as (owner, dacl, descriptor):
+            if not dacl:
+                raise self._unsafe_legacy_directory()
+            header = ctypes.cast(dacl, ctypes.POINTER(_AclHeader)).contents
+            if header.revision not in (2, 4):
+                raise self._unsafe_legacy_directory()
+            for index in range(header.count):
+                ace = _POINTER()
+                if not _security.GetAce(dacl, index, ctypes.byref(ace)):
+                    raise self._unsafe_legacy_directory()
+                entry = ctypes.cast(ace, ctypes.POINTER(_AceHeader)).contents
+                if entry.kind not in (0, 1) or entry.flags & ~0x1F or entry.size < 16:
+                    raise self._unsafe_legacy_directory()
+                sid = _POINTER(ace.value + 8)
+                if not _security.IsValidSid(sid) or 8 + _security.GetLengthSid(sid) > entry.size:
+                    raise self._unsafe_legacy_directory()
+                mask = ctypes.c_uint32.from_address(ace.value + 4).value
+                if mask & ~_KNOWN_FILE_RIGHTS:
+                    raise self._unsafe_legacy_directory()
+                if entry.kind == 1 or entry.flags & 8:
+                    continue
+                trusted = any(_security.EqualSid(sid, safe) for safe in (
+                    self.sid, self.system_sid, self.administrators_sid,
+                ))
+                # Conservatively refuse a foreign mutation allow ACE even if
+                # a separate deny ACE might narrow its effective rights.
+                if not trusted and mask & _MUTATION_RIGHTS:
+                    raise self._unsafe_legacy_directory()
 
     def assert_private(self, handle, directory):
         self.validate(handle, directory)
@@ -294,6 +363,9 @@ class _Security:
         for descriptor in self._descriptors:
             _kernel.LocalFree(descriptor)
         self._descriptors.clear()
+        for sid in self._owned_sids:
+            _kernel.LocalFree(sid)
+        self._owned_sids.clear()
 
 
 class PrivateDirectory:
@@ -353,6 +425,9 @@ class PrivateDirectory:
                         if directory:
                             inspect(Path(child.path))
             inspect(self.path)
+            for handle, directory in entries:
+                if directory:
+                    self._security.preflight_directory(handle)
             # Validate the entire legacy tree before changing any existing ACL;
             # protected children are repaired before inheritable parent rules.
             for handle, directory in reversed(entries):
