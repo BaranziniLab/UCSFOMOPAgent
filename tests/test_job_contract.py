@@ -43,7 +43,7 @@ class ContractTests(unittest.TestCase):
         return data
 
     def test_capacity_is_discoverable_and_rejection_is_structured(self):
-        self.assertEqual(self.store.capacity(), dict(active_jobs=0, max_active_jobs=2, available_slots=2))
+        self.assertEqual(self.store.capacity(), dict(active_jobs=0, max_active_jobs=2, available_slots=2, advisory=True))
         first, payload = self.queued()
         self.queued()
         self.assertEqual(self.store.status(first['job_id'])['capacity']['available_slots'], 0)
@@ -121,10 +121,10 @@ class ContractTests(unittest.TestCase):
 
     def test_worker_start_error_is_private_and_releases_capacity(self):
         with patch.object(backend, 'check_credentials'), patch.object(jobs.subprocess, 'Popen', side_effect=OSError('private_marker')):
-            with self.assertRaises(jobs.JobError) as raised:
-                self.store.submit('SELECT 1 AS example', {}, {})
-        self.assertEqual(raised.exception.details['code'], 'worker_start_failed')
-        self.assertNotIn('private_marker', str(raised.exception))
+            data = self.store.submit('SELECT 1 AS example', {}, {})
+        self.assertEqual(data['error_details']['code'], 'worker_start_failed')
+        self.assertEqual(data['state'], 'failed')
+        self.assertNotIn('private_marker', json.dumps(data))
         self.assertEqual(self.store.capacity()['active_jobs'], 0)
 
     def test_operation_outcomes_cover_legacy_failures_and_terminal_states(self):

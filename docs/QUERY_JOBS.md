@@ -203,3 +203,17 @@ Security updates remove the former Intel-macOS cryptography<49 constraint.
 Patched cryptography 50+ is required. If a compatible Intel macOS wheel is not
 available, install the upstream Rust/OpenSSL build prerequisites or use a
 supported Python/platform combination; do not restore a vulnerable version cap.
+
+## Submission and CLI follow-up semantics
+
+Capacity responses and rejection context include `advisory: true`: another client
+may consume an available slot before submission. Atomic admission remains the
+authority. Once a job ID has been allocated, a local worker-start or pipe failure
+returns that durable ID with failed operation metadata; it does not hide the job
+behind a generic submission error. No active slot remains allocated to that failure.
+
+CLI `watch JOB_ID` uses the same native bounded wait as MCP instead of a separate
+sleep/poll loop. The wait remains at most 30 seconds per call and can be repeated
+until terminal. `status JOB_ID` remains an immediate lookup. Terminal payload
+`phase` is the terminal state, while `error_details.phase` identifies where the
+failure actually occurred (for example `executing` or `worker_start`).

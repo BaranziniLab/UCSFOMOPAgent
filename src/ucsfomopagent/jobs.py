@@ -1,7 +1,7 @@
 """Durable, bounded-memory query jobs shared by the OMOP and CDW connectors."""
 from __future__ import annotations
 
-from contextlib import ExitStack, contextmanager
+from contextlib import ExitStack, contextmanager, suppress
 import asyncio
 import codecs
 import errno
@@ -112,7 +112,9 @@ execution before the first row often has no measurable percentage. Estimates fro
 prior identical queries or expected_rows are advisory, never guarantees.
 Only completed means the result file is complete; partial files are incomplete.
 Use cancel_query_job to stop unwanted work. Do not resubmit while a job is active.
-Do not repeatedly retry failures: inspect schema/plan and narrow the query first.
+Inspect error_details.code, phase and retryable before explicitly resubmitting.
+Fix credentials, connectivity, permissions or disk conditions rather than blindly
+rewriting SQL. Revise the query only when its schema, syntax or plan is the cause.
 Jobs survive chat/MCP disconnects, but not host reboot; interrupted queries require
 an explicit new submission. There is no unsafe automatic OFFSET resume or retry.
 Use read_query_job_result with the completed job ID for bounded UTF-8 chunks;
@@ -259,7 +261,7 @@ class JobStore:
     def capacity(self, *, database_timeout=10):
         with self.connect(timeout=database_timeout) as db:
             active = db.execute("SELECT COUNT(*) FROM jobs WHERE state IN ('queued','running')").fetchone()[0]
-        return dict(active_jobs=active, max_active_jobs=MAX_ACTIVE_JOBS, available_slots=max(0, MAX_ACTIVE_JOBS - active))
+        return dict(active_jobs=active, max_active_jobs=MAX_ACTIVE_JOBS, available_slots=max(0, MAX_ACTIVE_JOBS - active), advisory=True)
 
     async def wait(self, job_id, timeout_seconds=30):
         if type(timeout_seconds) is not int or not 0 <= timeout_seconds <= MAX_WAIT_SECONDS:
@@ -385,7 +387,7 @@ class JobStore:
             # Stale workers retain their slot until the operator checks their status.
             active = db.execute("SELECT COUNT(*) FROM jobs WHERE state IN ('queued','running')").fetchone()[0]
             if active >= MAX_ACTIVE_JOBS:
-                raise JobError('capacity_exceeded', 'transient', 'Two jobs are already active. Wait for completion or cancel unwanted work before submitting another.', 'admission', retryable=True, capacity=dict(active_jobs=active, max_active_jobs=MAX_ACTIVE_JOBS, available_slots=0))
+                raise JobError('capacity_exceeded', 'transient', 'Two jobs are already active. Wait for completion or cancel unwanted work before submitting another.', 'admission', retryable=True, capacity=dict(active_jobs=active, max_active_jobs=MAX_ACTIVE_JOBS, available_slots=0, advisory=True))
             history = db.execute("SELECT data FROM jobs WHERE fingerprint=? AND state='completed' ORDER BY updated DESC LIMIT 5", (fingerprint,)).fetchall()
             if history:
                 data['historical_seconds'] = statistics.median(json.loads(r[0])['finished_at'] - json.loads(r[0])['created_at'] for r in history)
@@ -397,7 +399,6 @@ class JobStore:
             details = dict(code='worker_start_failed', kind='internal', message='Could not start the local worker.', phase='worker_start', retryable=False)
             record_failure(data, details)
             self.update(data)
-            raise JobError(**details) from None
         return self.status(job_id)
 
     def _start_worker(self, job_id, request, credentials):
@@ -406,10 +407,19 @@ class JobStore:
         env['UCSF_AGENT_JOB_ROOT'] = str(self.root.parent)
         args = [sys.executable, '-m', f'{self.package}.job_worker', job_id]
         options = {'start_new_session': True} if os.name != 'nt' else {'creationflags': subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.DETACHED_PROCESS}
+        wire = json.dumps(dict(request=request, credentials=credentials)).encode()
         process = subprocess.Popen(args, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=env, **options)
-        process.stdin.write(json.dumps(dict(request=request, credentials=credentials)).encode())
-        process.stdin.close()
-        threading.Thread(target=process.wait, daemon=True).start()
+        try:
+            process.stdin.write(wire)
+            process.stdin.close()
+        except Exception:
+            with suppress(OSError):
+                if process.stdin is not None:
+                    process.stdin.close()
+            raise
+        finally:
+            with suppress(RuntimeError):
+                threading.Thread(target=process.wait, daemon=True).start()
 
 
 def register_job_tools(mcp, package, credentials, prefix='', *, store=None):

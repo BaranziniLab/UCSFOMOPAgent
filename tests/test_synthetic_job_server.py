@@ -98,7 +98,7 @@ class SyntheticJobServerTests(unittest.IsolatedAsyncioTestCase):
             self.assertFalse(second.is_error)
             capacity = await client.call_tool(fixture.PREFIX + 'query_job_capacity', {})
             self.assertEqual(capacity.structured_content,
-                             dict(active_jobs=2, max_active_jobs=2, available_slots=0))
+                             dict(active_jobs=2, max_active_jobs=2, available_slots=0, advisory=True))
             rejected = await self.submit(client, fixture.EXAMPLE_QUERY)
             self.assertTrue(rejected.is_error)
             self.assertEqual(rejected.structured_content['error']['code'], 'capacity_exceeded')

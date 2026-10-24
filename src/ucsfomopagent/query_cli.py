@@ -1,12 +1,12 @@
 """CLI front end for the same jobs exposed over MCP."""
 import argparse
+import asyncio
 import getpass
 import importlib
 import json
 import os
 from pathlib import Path
 import sys
-import time
 
 from .jobs import JobStore, TERMINAL
 
@@ -78,11 +78,10 @@ def main(argv=None):
             data = store.cancel(args.job_id)
         else:
             while True:
-                data = store.status(args.job_id)
+                data = asyncio.run(store.wait(args.job_id)) if args.command == 'watch' else store.status(args.job_id)
                 if args.command != 'watch' or data['state'] in TERMINAL:
                     break
                 print(json.dumps(data), flush=True)
-                time.sleep(data['recommended_poll_seconds'])
         print(json.dumps(data), flush=True)
         return 1 if data['state'] in ('failed', 'timed_out', 'cancelled', 'interrupted') else 0
     except (ValueError, RuntimeError) as error:
