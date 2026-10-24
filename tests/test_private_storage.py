@@ -188,5 +188,5 @@ class StorageFailureToolTests(unittest.TestCase):
                     self.assertTrue(result.is_error, name)
                     self.assertEqual(result.structured_content['error']['code'], 'private_storage_unavailable', name)
                     self.assertIn('owned local directory', result.structured_content['error']['message'])
-                    self.assertIsNone(result.meta)
+                    self.assertNotIn(jobs.OPERATION_META_KEY, result.meta or {})
         asyncio.run(run())
