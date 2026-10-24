@@ -9,6 +9,7 @@ import threading
 import time
 
 from .jobs import JobStore, ACTIVE, failure_details, record_failure
+from .private_storage import private_storage_call
 
 
 def execute(store, job_id, payload, stream):
@@ -29,8 +30,9 @@ def execute(store, job_id, payload, stream):
 
     def run():
         try:
-            with partial.open('xb') as out:
-                os.chmod(partial, 0o600)
+            with private_storage_call(lambda: store._storage.child(job_id)) as private_output, private_storage_call(
+                lambda: private_output.open_file(partial.name, exclusive=True)
+            ) as out:
                 csv_buffer = io.StringIO(newline='')
                 writer = csv.writer(csv_buffer) if request['format'] == 'csv' else None
                 header = False

@@ -21,6 +21,8 @@ import uuid
 from filelock import FileLock, Timeout
 from mcp.types import CallToolResult
 
+from .private_storage import PrivateStorageError, private_directory, private_storage_call
+
 ACTIVE = ('queued', 'running')
 TERMINAL = ('completed', 'failed', 'cancelled', 'timed_out', 'interrupted')
 MAX_ACTIVE_JOBS = 2
@@ -40,6 +42,8 @@ class JobError(ValueError):
 def failure_details(error, phase):
     if isinstance(error, JobError):
         return error.details
+    if isinstance(error, PrivateStorageError):
+        return dict(code='private_storage_unavailable', kind='permission_denied', message=str(error), phase=phase, retryable=False)
     code, kind, message, retryable = 'query_failed', 'tool_failure', 'Database execution or result processing failed. Check the query plan, schema and selected output format.', False
     if isinstance(error, OverflowError):
         code, message = 'output_limit_exceeded', 'Output byte budget exceeded; narrow the export or explicitly raise max_bytes.'
@@ -164,31 +168,24 @@ def validate_query(query: str, dialect: str) -> str:
 
 
 def private_dir(path: Path) -> Path:
-    if path.is_symlink():
-        raise ValueError('Job directories must not be symbolic links.')
-    path.mkdir(parents=True, exist_ok=True, mode=0o700)
-    path.chmod(0o700)
-    return path
+    with private_directory(path) as directory:
+        return directory.path
 
 
 class JobStore:
     def __init__(self, package: str, root: str | Path | None = None):
         self.package = package
-        self.root = private_dir(Path(root or os.environ.get('UCSF_AGENT_JOB_ROOT', Path.home() / '.local/share/ucsf-agents')) / package)
-        self.root = self.root.resolve()
-        root_stat = self.root.stat()
-        self._root_identity = (root_stat.st_dev, root_stat.st_ino)
+        self._storage = private_directory(Path(root or os.environ.get('UCSF_AGENT_JOB_ROOT', Path.home() / '.local/share/ucsf-agents')) / package)
+        self.root = self._storage.path
+        self._root_identity = self._storage.identity
         self.dbpath = self.root / 'jobs.sqlite3'
-        if self.dbpath.is_symlink():
-            raise ValueError('Job database must not be a symbolic link.')
-        fd = os.open(self.dbpath, os.O_CREAT | os.O_RDWR, 0o600)
-        os.close(fd)
         with self.connect() as db:
             db.execute('CREATE TABLE IF NOT EXISTS jobs (id TEXT PRIMARY KEY, state TEXT, updated REAL, fingerprint TEXT, data TEXT)')
-        self.dbpath.chmod(0o600)
 
     @contextmanager
     def connect(self, timeout=10):
+        with private_storage_call(lambda: self._storage.open_file('jobs.sqlite3')):
+            pass
         db = sqlite3.connect(self.dbpath, timeout=timeout)
         try:
             with db:
@@ -292,6 +289,10 @@ class JobStore:
     def read_result(self, job_id, offset=0, max_bytes=8192):
         if type(offset) is not int or offset < 0 or type(max_bytes) is not int or not 4 <= max_bytes <= MAX_RESULT_BYTES:
             raise JobError('invalid_result_chunk', 'invalid_args', 'offset must be a nonnegative byte offset; max_bytes must be 4..65536.', 'result_read')
+        try:
+            self._storage.verify()
+        except (OSError, ValueError):
+            raise JobError('result_scope_changed', 'permission_denied', 'The managed job directory changed or cannot be secured; result access was refused.', 'result_read') from None
         data = self.status(job_id)
         if data['state'] != 'completed':
             raise JobError('result_not_complete', 'invalid_args', 'Only completed job results can be read.', 'result_read')
@@ -301,7 +302,7 @@ class JobStore:
             raise JobError('secure_reader_unavailable', 'internal', 'This platform does not support the secure result reader; use the local CLI result file.', 'result_read')
         try:
             with ExitStack() as stack:
-                root_fd = os.open(self.root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+                root_fd = self._storage.duplicate_fd()
                 stack.callback(os.close, root_fd)
                 root_stat = os.fstat(root_fd)
                 if (root_stat.st_dev, root_stat.st_ino) != self._root_identity:
@@ -357,7 +358,9 @@ class JobStore:
     def cancel(self, job_id):
         data = self.status(job_id)
         if data['state'] in ACTIVE:
-            (self.directory(job_id) / 'cancel').touch(mode=0o600)
+            with private_storage_call(lambda: self._storage.child(job_id)) as directory:
+                with private_storage_call(lambda: directory.open_file('cancel')):
+                    pass
             data['cancel_requested'] = True
         return data
 
@@ -391,7 +394,8 @@ class JobStore:
             history = db.execute("SELECT data FROM jobs WHERE fingerprint=? AND state='completed' ORDER BY updated DESC LIMIT 5", (fingerprint,)).fetchall()
             if history:
                 data['historical_seconds'] = statistics.median(json.loads(r[0])['finished_at'] - json.loads(r[0])['created_at'] for r in history)
-            private_dir(self.directory(job_id))
+            with private_storage_call(lambda: self._storage.child(job_id)):
+                pass
             db.execute('INSERT INTO jobs VALUES (?,?,?,?,?)', (job_id, 'queued', now, fingerprint, json.dumps(data)))
         try:
             self._start_worker(job_id, request, credentials)
@@ -424,13 +428,22 @@ class JobStore:
 
 def register_job_tools(mcp, package, credentials, prefix='', *, store=None):
     from mcp.types import ToolAnnotations
-    store = store if store is not None else JobStore(package)
+    storage_error = None
+    if store is None:
+        try:
+            store = JobStore(package)
+        except PrivateStorageError as error:
+            storage_error = error
 
     def call(action, operation=False):
         try:
+            if storage_error is not None:
+                raise storage_error
             data = action()
             return tool_result(data, package if operation else None)
         except ValueError as error:
+            if isinstance(error, PrivateStorageError):
+                return tool_failure(error, 'storage')
             if not isinstance(error, JobError):
                 error = JobError('invalid_request', 'invalid_args', 'Invalid query or job arguments. Check the read-only query policy and declared argument bounds.', 'validation')
             return tool_failure(error)
@@ -445,7 +458,7 @@ def register_job_tools(mcp, package, credentials, prefix='', *, store=None):
     @mcp.tool(name=prefix + 'query_job_capacity', annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False))
     def query_job_capacity() -> CallToolResult:
         """Read active_jobs, max_active_jobs and available_slots before submission. Capacity is advisory; admission is atomically checked again when submitting."""
-        return call(store.capacity)
+        return call(lambda: store.capacity())
 
     @mcp.tool(name=prefix + 'query_job_status', annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False))
     def query_job_status(job_id: str) -> CallToolResult:
@@ -456,6 +469,8 @@ def register_job_tools(mcp, package, credentials, prefix='', *, store=None):
     async def wait_for_query_job(job_id: str, timeout_seconds: int = 30) -> CallToolResult:
         """Wait natively for a terminal job state, for 0..30 seconds. wait_timed_out means this wait ended while the job remains active; it does not cancel or time out the job. Cancellation stops waiting only."""
         try:
+            if storage_error is not None:
+                raise storage_error
             return tool_result(await store.wait(job_id, timeout_seconds), package)
         except Exception as error:
             return tool_failure(error)

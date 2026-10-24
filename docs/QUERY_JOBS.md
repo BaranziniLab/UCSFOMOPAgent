@@ -47,8 +47,15 @@ malicious code running under the same OS account.
 ## Storage and progress
 
 Jobs live in `~/.local/share/ucsf-agents/ucsfomopagent/` (override the parent using
-UCSF_AGENT_JOB_ROOT). Directories are private (0700) and DB/results are 0600 on
-POSIX. On Windows use the account's private profile directory and its ACLs.
+UCSF_AGENT_JOB_ROOT). The storage backend checks current-account ownership,
+rejects symlinks, nonregular entries and hard-linked private files, and repairs
+existing owned stores before reading them. On macOS/Linux it uses retained
+no-follow descriptors, modes 0700/0600 and removal of inherited ACL grants.
+New result files are protected before any result bytes are written. Windows uses
+a protected current-user DACL through retained no-reparse handles. Unsupported
+or unsafe storage returns an actionable `private_storage_unavailable` error from
+the job tools; synchronous connector tools remain available. Normal job use
+requires no additional prompts or changes to the six-tool interface.
 SQLite serializes admission (two active jobs per connector). Results stream in
 1000-row batches to a `.partial` file and are renamed only after success and
 fsync. The default disk budget is 10 GB; exceeding it fails visibly rather than
@@ -56,6 +63,14 @@ silently truncating the dataset. JSONL preserves nulls; CSV encodes null as empt
 and JSON-encodes graph/list values. Use JSONL when empty string and null must be
 distinguished. SQL projections require unique column aliases. Exported text may
 contain spreadsheet formula strings: treat it as data when importing CSV.
+
+These permissions protect against other ordinary local accounts where filesystem
+ACLs are enforced; they do not revoke file handles another process opened before
+an old store was repaired. They do not isolate arbitrary code running under the
+same OS account, administrators or root. Choose storage beneath a private or
+administrator-controlled parent directory. SQLite and process-lease/final-rename
+operations still use pathnames after identity checks; this update does not claim
+to eliminate every pathname replacement race in the complete job runtime.
 
 Status records queued/running/terminal states and separate connecting/planning/
 executing/streaming phases,
