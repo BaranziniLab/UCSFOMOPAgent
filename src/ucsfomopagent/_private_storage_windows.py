@@ -205,10 +205,18 @@ class _Security:
             if not _security.GetTokenInformation(token, 1, self._user, size, ctypes.byref(size)):
                 raise _error()
             self.sid = ctypes.cast(self._user, ctypes.POINTER(_TokenUser)).contents.User.Sid
+            size = wintypes.DWORD()
+            _security.GetTokenInformation(token, 4, None, 0, ctypes.byref(size))
+            if not ctypes.sizeof(_POINTER) <= size.value <= 65536:
+                raise OSError(errno.ENOTSUP, 'Cannot obtain the Windows process default owner SID.')
+            self._owner = ctypes.create_string_buffer(size.value)
+            if not _security.GetTokenInformation(token, 4, self._owner, size, ctypes.byref(size)):
+                raise _error()
+            self.owner_sid = ctypes.cast(self._owner, ctypes.POINTER(_POINTER)).contents.value
         finally:
             _close(token)
-        if not _security.IsValidSid(self.sid):
-            raise ValueError('The Windows process owner SID is invalid.')
+        if not _security.IsValidSid(self.sid) or not _security.IsValidSid(self.owner_sid):
+            raise ValueError('A Windows process ownership SID is invalid.')
         string = _POINTER()
         if not _security.ConvertSidToStringSidW(self.sid, ctypes.byref(string)):
             raise _error()
@@ -246,8 +254,12 @@ class _Security:
             raise ValueError('Private job storage requires ordinary files and directories without reparse points or hard links.')
         if owner:
             with _security_info(handle) as (actual_owner, unused, descriptor):
-                if not actual_owner or not _security.IsValidSid(actual_owner) or not _security.EqualSid(actual_owner, self.sid):
-                    raise ValueError('Private job storage must be owned by the current Windows user.')
+                # Elevated Windows tokens can assign their default owner to
+                # SQLite journals. Accept only that exact token SID, not groups
+                # in general; the protected DACL still grants only TokenUser.
+                if (not actual_owner or not _security.IsValidSid(actual_owner)
+                        or not any(_security.EqualSid(actual_owner, sid) for sid in (self.sid, self.owner_sid))):
+                    raise ValueError('Private job storage must be owned by the Windows account or its process default owner.')
         return _identity(information)
 
     def assert_private(self, handle, directory):

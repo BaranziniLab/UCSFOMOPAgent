@@ -3,6 +3,7 @@ import importlib
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -25,8 +26,11 @@ class WindowsPrivateStorageTests(unittest.TestCase):
 
     def powershell(self, script, path):
         environment = dict(os.environ, PRIVATE_STORAGE_TEST_PATH=str(path))
+        # A parent PS7 module path can prevent Windows PowerShell 5 from loading
+        # its own security module. Let the selected engine build its defaults.
+        environment.pop('PSModulePath', None)
         result = subprocess.run(
-            ['powershell.exe', '-NoProfile', '-NonInteractive', '-Command',
+            [shutil.which('pwsh.exe') or 'powershell.exe', '-NoProfile', '-NonInteractive', '-Command',
              "$ErrorActionPreference='Stop'; [Console]::OutputEncoding=[Text.UTF8Encoding]::new(); " + script],
             env=environment, capture_output=True, text=True, encoding='utf-8', timeout=30,
         )
@@ -44,6 +48,7 @@ class WindowsPrivateStorageTests(unittest.TestCase):
                   inherited=$_.IsInherited; inheritance=[int]$_.InheritanceFlags}
             });
             @{owner=$owner; current=[Security.Principal.WindowsIdentity]::GetCurrent().User.Value;
+              tokenOwner=[Security.Principal.WindowsIdentity]::GetCurrent().Owner.Value;
               protected=$acl.AreAccessRulesProtected; rules=$rules;
               sddl=$acl.GetSecurityDescriptorSddlForm([Security.AccessControl.AccessControlSections]::All)} |
                 ConvertTo-Json -Depth 5 -Compress
@@ -70,9 +75,9 @@ class WindowsPrivateStorageTests(unittest.TestCase):
             Set-Acl -LiteralPath $env:PRIVATE_STORAGE_TEST_PATH -AclObject $acl
         """, path)
 
-    def assert_private(self, path, directory):
+    def assert_private(self, path, directory, *, token_owner=False):
         acl = self.acl(path)
-        self.assertEqual(acl['owner'], acl['current'])
+        self.assertIn(acl['owner'], (acl['current'], acl['tokenOwner']) if token_owner else (acl['current'],))
         self.assertTrue(acl['protected'])
         self.assertEqual(acl['rules'], [dict(sid=acl['current'], type='Allow',
                                           rights=0x001F01FF, inherited=False,
@@ -200,8 +205,11 @@ class WindowsPrivateStorageTests(unittest.TestCase):
         with store.connect() as database:
             database.execute('CREATE TABLE synthetic_check(value TEXT)')
             database.execute("INSERT INTO synthetic_check VALUES ('synthetic')")
+            journal = Path(str(store.dbpath) + '-journal')
+            self.assertTrue(journal.is_file())
             second = jobs.JobStore(PACKAGE, self.base)
             self.addCleanup(second._storage.close)
+            self.assert_private(journal, False, token_owner=True)
         with patch.object(backend, 'check_credentials'), patch.object(jobs.subprocess, 'Popen') as popen:
             data = store.submit('SELECT 1 AS value', {}, {'password': 'synthetic'}, format='csv')
             wire = json.loads(popen.return_value.stdin.write.call_args.args[0])
