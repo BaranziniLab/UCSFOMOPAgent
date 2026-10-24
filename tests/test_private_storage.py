@@ -1,9 +1,11 @@
 """Synthetic owner-private storage controls; no database credentials are needed."""
 import asyncio
+import errno
 import importlib
 import os
 from pathlib import Path
 import stat
+import struct
 import subprocess
 import sys
 import tempfile
@@ -116,6 +118,31 @@ class PrivateStorageTests(unittest.TestCase):
                 self.assertNotIn('everyone', acl)
                 created.write(b'synthetic-only')
 
+    @unittest.skipUnless(sys.platform.startswith('linux'), 'Linux default ACL control')
+    def test_linux_default_and_access_acls_are_removed(self):
+        shared = self.parent / 'shared'
+        shared.mkdir()
+        entries = [(1, 7, 0xffffffff), (2, 5, 65534), (4, 5, 0xffffffff), (16, 5, 0xffffffff), (32, 5, 0xffffffff)]
+        acl = struct.pack('<I', 2) + b''.join(struct.pack('<HHI', *entry) for entry in entries)
+        try:
+            os.setxattr(shared, 'system.posix_acl_default', acl)
+        except OSError as error:
+            if error.errno in (errno.ENOTSUP, errno.EPERM):
+                self.skipTest('the synthetic filesystem does not support setting POSIX ACLs')
+            raise
+        root = shared / 'store'
+        root.mkdir()
+        self.assertTrue(os.getxattr(root, 'system.posix_acl_access'))
+        with storage.private_directory(root) as directory:
+            for attribute in ('system.posix_acl_access', 'system.posix_acl_default'):
+                with self.assertRaises(OSError) as caught:
+                    os.getxattr(root, attribute)
+                self.assertEqual(caught.exception.errno, errno.ENODATA)
+            with directory.open_file('result.csv', exclusive=True):
+                with self.assertRaises(OSError) as caught:
+                    os.getxattr(root / 'result.csv', 'system.posix_acl_access')
+                self.assertEqual(caught.exception.errno, errno.ENODATA)
+
     @unittest.skipUnless(sys.platform.startswith('linux') and os.geteuid() == 0, 'Linux root-only two-UID synthetic control')
     def test_linux_second_uid_reads_control_but_cannot_read_private_result(self):
         self.parent.chmod(0o755)
@@ -131,6 +158,15 @@ class PrivateStorageTests(unittest.TestCase):
 
 
 class StorageFailureToolTests(unittest.TestCase):
+    def test_full_disk_keeps_actionable_storage_category(self):
+        def full():
+            raise OSError(errno.ENOSPC, 'private-path-marker')
+        with self.assertRaises(storage.PrivateStorageError) as caught:
+            storage.private_storage_call(full)
+        details = jobs.failure_details(caught.exception, 'opening_output')
+        self.assertEqual(details['code'], 'disk_full')
+        self.assertNotIn('private-path-marker', details['message'])
+
     def test_storage_failure_keeps_all_six_tools_registered_with_actionable_errors(self):
         async def run():
             from fastmcp import Client, FastMCP

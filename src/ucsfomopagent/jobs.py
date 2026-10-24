@@ -43,7 +43,7 @@ def failure_details(error, phase):
     if isinstance(error, JobError):
         return error.details
     if isinstance(error, PrivateStorageError):
-        return dict(code='private_storage_unavailable', kind='permission_denied', message=str(error), phase=phase, retryable=False)
+        return dict(code=error.code, kind=error.kind, message=str(error), phase=phase, retryable=False)
     code, kind, message, retryable = 'query_failed', 'tool_failure', 'Database execution or result processing failed. Check the query plan, schema and selected output format.', False
     if isinstance(error, OverflowError):
         code, message = 'output_limit_exceeded', 'Output byte budget exceeded; narrow the export or explicitly raise max_bytes.'

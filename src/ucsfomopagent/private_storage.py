@@ -10,7 +10,10 @@ import sys
 
 
 class PrivateStorageError(ValueError):
-    pass
+    def __init__(self, message, code='private_storage_unavailable', kind='permission_denied'):
+        super().__init__(message)
+        self.code = code
+        self.kind = kind
 
 
 def _name(name):
@@ -183,6 +186,11 @@ def private_storage_call(action):
     try:
         return action()
     except (OSError, ValueError) as error:
+        if isinstance(error, OSError) and error.errno == errno.ENOSPC:
+            raise PrivateStorageError(
+                'Local job storage is full. Free space before explicitly resubmitting.',
+                code='disk_full', kind='tool_failure',
+            ) from error
         raise PrivateStorageError(
             'Private job storage could not be secured. Use an owned local directory '
             'with enforceable owner-only ACLs; recover symbolic/hard links or '
