@@ -165,11 +165,19 @@ class StorageFailureToolTests(unittest.TestCase):
         )
         def refuse():
             raise refusal
-        with self.assertRaises(storage.PrivateStorageError) as caught:
-            storage.private_storage_call(refuse)
-        self.assertIs(caught.exception, refusal)
-        self.assertEqual(jobs.failure_details(caught.exception, 'storage')['code'],
-                         'private_storage_requires_quiescent_repair')
+        async def run():
+            from fastmcp import Client, FastMCP
+            mcp = FastMCP('legacy storage recovery')
+            with patch.object(jobs, 'JobStore', side_effect=lambda package: storage.private_storage_call(refuse)):
+                jobs.register_job_tools(mcp, PACKAGE, {}, prefix='fixture-')
+            async with Client(mcp) as client:
+                result = await client.call_tool('fixture-query_job_capacity', {}, raise_on_error=False)
+                self.assertTrue(result.is_error)
+                self.assertEqual(result.structured_content['error']['code'],
+                                 'private_storage_requires_quiescent_repair')
+                self.assertIn('administrator', result.structured_content['error']['message'])
+                self.assertNotIn(jobs.OPERATION_META_KEY, result.meta or {})
+        asyncio.run(run())
 
     def test_full_disk_keeps_actionable_storage_category(self):
         def full():
