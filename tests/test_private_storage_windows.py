@@ -41,9 +41,9 @@ class WindowsPrivateStorageTests(unittest.TestCase):
         return json.loads(self.powershell("""
             $acl=Get-Acl -LiteralPath $env:PRIVATE_STORAGE_TEST_PATH;
             $sidType=[Security.Principal.SecurityIdentifier];
-            $owner=([Security.Principal.NTAccount]::new($acl.Owner)).Translate($sidType).Value;
-            $rules=@($acl.Access | ForEach-Object {
-                @{sid=$_.IdentityReference.Translate($sidType).Value;
+            $owner=$acl.GetOwner($sidType).Value;
+            $rules=@($acl.GetAccessRules($true,$true,$sidType) | ForEach-Object {
+                @{sid=$_.IdentityReference.Value;
                   type=$_.AccessControlType.ToString(); rights=[int64]$_.FileSystemRights;
                   inherited=$_.IsInherited; inheritance=[int]$_.InheritanceFlags}
             });
