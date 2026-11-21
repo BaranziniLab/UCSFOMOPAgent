@@ -29,6 +29,8 @@ class MCPTests(unittest.TestCase):
                 tools = await client.list_tools()
                 names = {t.name for t in tools}
                 self.assertEqual(len(names), count, names)
+                manifest = json.loads((Path(__file__).resolve().parents[1] / 'manifest.json').read_text())
+                self.assertEqual(manifest['tools_count'], len(names), 'manifest tools_count must match the tools the server lists')
                 self.assertTrue({prefix+n for n in ['submit_query_job','query_job_capacity','query_job_status','wait_for_query_job','read_query_job_result','cancel_query_job']} <= names)
                 submit = next(t for t in tools if t.name == prefix+'submit_query_job')
                 self.assertNotIn('credentials', submit.input_schema['properties'])
